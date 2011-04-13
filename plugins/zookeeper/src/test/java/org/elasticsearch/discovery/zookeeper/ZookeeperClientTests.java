@@ -20,6 +20,13 @@
 package org.elasticsearch.discovery.zookeeper;
 
 import org.elasticsearch.ElasticSearchException;
+import org.elasticsearch.cluster.ClusterState;
+import org.elasticsearch.cluster.node.DiscoveryNode;
+import org.elasticsearch.cluster.node.DiscoveryNodes;
+import org.elasticsearch.cluster.routing.IndexRoutingTable;
+import org.elasticsearch.cluster.routing.RoutingTable;
+import org.elasticsearch.cluster.routing.ShardRoutingState;
+import org.elasticsearch.common.transport.LocalTransportAddress;
 import org.elasticsearch.discovery.zookeeper.client.NodeCreatedListener;
 import org.elasticsearch.discovery.zookeeper.client.NodeDeletedListener;
 import org.elasticsearch.discovery.zookeeper.client.NodeListChangedListener;
@@ -123,7 +130,7 @@ public class ZookeeperClientTests extends AbstractZookeeperTests {
 
         final CountDownLatch latch = new CountDownLatch(1);
 
-        zk1.registerNode("node1", "Node 1".getBytes(), new NodeDeletedListener() {
+        zk1.registerNode(buildDiscoveryNode("node1"), new NodeDeletedListener() {
             @Override public void onNodeDeleted(String id) {
                 assertThat(id, equalTo("node1"));
                 latch.countDown();
@@ -139,11 +146,15 @@ public class ZookeeperClientTests extends AbstractZookeeperTests {
     @Test public void testNodeInfo() throws Exception {
         ZookeeperClient zk1 = buildZookeeper();
 
-        zk1.registerNode("node1", "Node 1".getBytes(), null);
+        zk1.registerNode(buildDiscoveryNode("node1"), null);
 
-        assertThat(zk1.nodeInfo("node1"), equalTo("Node 1".getBytes()));
+        assertThat(zk1.nodeInfo("node1").id(), equalTo("node1"));
         assertThat(zk1.nodeInfo("node2"), nullValue());
 
+    }
+
+    private DiscoveryNode buildDiscoveryNode(String id) {
+        return new DiscoveryNode(id, new LocalTransportAddress("addr" + id));
     }
 
 
@@ -183,9 +194,9 @@ public class ZookeeperClientTests extends AbstractZookeeperTests {
         CountDownLatch latch = new CountDownLatch(4);
         RelistListener listener = new RelistListener(zk1, lists, latch);
         assertThat(zk1.listNodes(listener).size(), equalTo(0));
-        zk1.registerNode("id1", null, null);
-        zk1.registerNode("id2", null, null);
-        zk1.registerNode("id3", null, null);
+        zk1.registerNode(buildDiscoveryNode("id1"), null);
+        zk1.registerNode(buildDiscoveryNode("id2"), null);
+        zk1.registerNode(buildDiscoveryNode("id3"), null);
         zk1.unregisterNode("id2");
 
         assertThat(latch.await(1, TimeUnit.SECONDS), equalTo(true));
@@ -240,6 +251,47 @@ public class ZookeeperClientTests extends AbstractZookeeperTests {
         zk1.stop();
         assertThat(latch.await(1, TimeUnit.SECONDS), equalTo(true));
         assertThat(createdCalled.get(), equalTo(false));
+
+
+    }
+
+    @Test public void testClusterStatePublishing() throws Exception {
+        IndexRoutingTable indexRoutingTable = new IndexRoutingTable.Builder("index")
+                .addShard(123, "nodeid", true, ShardRoutingState.STARTED, true)
+                .build();
+        RoutingTable routingTable = RoutingTable.newRoutingTableBuilder()
+                .add(indexRoutingTable)
+                .build();
+
+        DiscoveryNodes nodes = DiscoveryNodes.newNodesBuilder()
+                .masterNodeId("localnodeid")
+                .build();
+
+        ClusterState initialState = ClusterState.newClusterStateBuilder()
+                .version(1234L)
+                .routingTable(routingTable)
+                .nodes(nodes)
+                .build();
+
+        ZookeeperClient zk1 = buildZookeeper();
+        zk1.publishClusterState(initialState);
+
+        ClusterState retrievedState = zk1.retrieveClusterState(null);
+
+        assertThat(ClusterState.Builder.toBytes(retrievedState),
+                equalTo(ClusterState.Builder.toBytes(initialState)));
+
+        ClusterState secondVersion = ClusterState.newClusterStateBuilder()
+                .state(initialState)
+                .version(1235L)
+                .build();
+
+        zk1.publishClusterState(secondVersion);
+
+        retrievedState = zk1.retrieveClusterState(null);
+
+        assertThat(ClusterState.Builder.toBytes(retrievedState),
+                equalTo(ClusterState.Builder.toBytes(secondVersion)));
 
 
     }

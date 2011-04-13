@@ -147,6 +147,7 @@ public class ZookeeperDiscoveryTests {
         embeddedZookeeperService.start();
         putDefaultSettings(ImmutableSettings.settingsBuilder()
                 .put("discovery.zookeeper.client.host", "localhost:" + embeddedZookeeperService.port())
+                .put("discovery.zookeeper.state_publishing.enabled", true)
                 .put("discovery.type", "zookeeper")
                 .put("transport.type", "local")
         );

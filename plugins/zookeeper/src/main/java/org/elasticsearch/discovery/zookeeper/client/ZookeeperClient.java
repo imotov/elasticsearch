@@ -20,6 +20,8 @@
 package org.elasticsearch.discovery.zookeeper.client;
 
 import org.elasticsearch.ElasticSearchException;
+import org.elasticsearch.cluster.ClusterState;
+import org.elasticsearch.cluster.node.DiscoveryNode;
 import org.elasticsearch.common.component.LifecycleComponent;
 
 import java.util.Set;
@@ -33,13 +35,21 @@ public interface ZookeeperClient extends LifecycleComponent<ZookeeperClient> {
 
     public String findMaster(NodeCreatedListener masterCreatedListener, NodeDeletedListener masterDeletedListener) throws ElasticSearchException, InterruptedException;
 
-    public void registerNode(String id, byte[] nodeInfo, NodeDeletedListener listener) throws ElasticSearchException, InterruptedException;
+    public void registerNode(DiscoveryNode nodeInfo, NodeDeletedListener listener) throws ElasticSearchException, InterruptedException;
 
     public void unregisterNode(String id) throws ElasticSearchException, InterruptedException;
 
     public Set<String> listNodes(NodeListChangedListener listener) throws ElasticSearchException, InterruptedException;
 
-    public byte[] nodeInfo(String id) throws ElasticSearchException, InterruptedException;
+    public DiscoveryNode nodeInfo(String id) throws ElasticSearchException, InterruptedException;
+
+    public void localNode(DiscoveryNode localNode);
+
+    public void syncClusterState() throws ElasticSearchException, InterruptedException;
+
+    public void publishClusterState(ClusterState state) throws ElasticSearchException, InterruptedException;
+
+    public ClusterState retrieveClusterState(NewClusterStateListener newClusterStateListener) throws ElasticSearchException, InterruptedException;
 
     public long sessionId();
 
