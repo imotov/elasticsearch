@@ -28,6 +28,8 @@ import org.elasticsearch.discovery.zookeeper.client.ZookeeperClient;
 import org.elasticsearch.discovery.zookeeper.client.ZookeeperClientService;
 import org.elasticsearch.discovery.zookeeper.embedded.EmbeddedZookeeperService;
 import org.elasticsearch.env.Environment;
+import org.elasticsearch.zookeeper.ZookeeperEnvironment;
+import org.elasticsearch.zookeeper.ZookeeperFactory;
 import org.testng.annotations.*;
 
 import java.io.File;
@@ -46,9 +48,13 @@ public abstract class AbstractZookeeperTests {
 
     protected EmbeddedZookeeperService embeddedZooKeeperService;
 
-    protected List<ZookeeperClient> zookeeperClients = new ArrayList<ZookeeperClient>();
+    protected final List<ZookeeperClient> zookeeperClients = new ArrayList<ZookeeperClient>();
 
     private Settings defaultSettings = ImmutableSettings.Builder.EMPTY_SETTINGS;
+
+    private ZookeeperEnvironment environment;
+
+    private ZookeeperFactory zookeeperFactory;
 
     public void putDefaultSettings(Settings.Builder settings) {
         putDefaultSettings(settings.build());
@@ -68,7 +74,10 @@ public abstract class AbstractZookeeperTests {
         embeddedZooKeeperService.start();
         putDefaultSettings(ImmutableSettings.settingsBuilder()
                 .put(defaultSettings)
-                .put("discovery.zookeeper.client.host", "localhost:" + embeddedZooKeeperService.port()));
+                .put("zookeeper.host", "localhost:" + embeddedZooKeeperService.port()));
+
+        zookeeperFactory = new ZookeeperFactory(defaultSettings);
+        environment = new ZookeeperEnvironment(defaultSettings, ClusterName.clusterNameFromSettings(defaultSettings));
     }
 
     @AfterClass public void stopZooKeeper() {
@@ -99,12 +108,25 @@ public abstract class AbstractZookeeperTests {
                 .put(defaultSettings)
                 .put(settings)
                 .build();
-
-        ZookeeperClient zookeeperClient = new ZookeeperClientService(finalSettings, ClusterName.clusterNameFromSettings(finalSettings));
+        ZookeeperEnvironment environment = new ZookeeperEnvironment(finalSettings, ClusterName.clusterNameFromSettings(defaultSettings));
+        ZookeeperClient zookeeperClient = new ZookeeperClientService(finalSettings, environment, zookeeperFactory);
         zookeeperClient.start();
         zookeeperClients.add(zookeeperClient);
         return zookeeperClient;
     }
+
+    public ZookeeperFactory zookeeperFactory() {
+        return zookeeperFactory;
+    }
+
+    public ZookeeperEnvironment zookeeperEnvironment() {
+        return environment;
+    }
+
+    public Settings defaultSettings() {
+        return defaultSettings;
+    }
+
 
     private boolean deleteDirectory(File path) {
         if (path.exists()) {

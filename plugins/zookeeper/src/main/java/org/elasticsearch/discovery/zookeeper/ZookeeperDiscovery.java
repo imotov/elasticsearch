@@ -290,7 +290,7 @@ public class ZookeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
                 RoutingTable routingTable = currentState.routingTable();
                 ClusterBlocks clusterBlocks = ClusterBlocks.builder().blocks(currentState.blocks()).addGlobalBlock(NO_MASTER_BLOCK).build();
                 // if this is a data node, clean the metadata and routing, since we want to recreate the indices and shards
-                if (currentState.nodes().localNode().dataNode()) {
+                if (currentState.nodes().localNode()!= null && currentState.nodes().localNode().dataNode()) {
                     metaData = MetaData.newMetaDataBuilder().build();
                     routingTable = RoutingTable.newRoutingTableBuilder().build();
                 }

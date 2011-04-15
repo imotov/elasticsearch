@@ -146,7 +146,7 @@ public class ZookeeperDiscoveryTests {
         embeddedZookeeperService = new EmbeddedZookeeperService(settings, tempEnvironment);
         embeddedZookeeperService.start();
         putDefaultSettings(ImmutableSettings.settingsBuilder()
-                .put("discovery.zookeeper.client.host", "localhost:" + embeddedZookeeperService.port())
+                .put("zookeeper.host", "localhost:" + embeddedZookeeperService.port())
                 .put("discovery.zookeeper.state_publishing.enabled", true)
                 .put("discovery.type", "zookeeper")
                 .put("transport.type", "local")
@@ -283,7 +283,12 @@ public class ZookeeperDiscoveryTests {
         assertThat(clientState.nodes().masterNode().name(), equalTo("node1"));
         assertThat(nodeState.nodes().masterNode().name(), equalTo("node1"));
 
-        clientMonitor = new ClusterStateMonitor("client");
+        // Shutdown master node and wait until state is updated
+        clientMonitor = new ClusterStateMonitor("client", new ClusterStateCondition() {
+            @Override public boolean check(ClusterChangedEvent event) {
+                return event.state().nodes().masterNode() == null;
+            }
+        });
         node("node1").stop();
         clientState = clientMonitor.await();
         assertThat(clientState.nodes().masterNode(), nullValue());

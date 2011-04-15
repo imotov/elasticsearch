@@ -22,7 +22,6 @@ package org.elasticsearch.discovery.zookeeper.client;
 import org.apache.zookeeper.*;
 import org.apache.zookeeper.data.Stat;
 import org.elasticsearch.ElasticSearchException;
-import org.elasticsearch.cluster.ClusterName;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.block.ClusterBlocks;
 import org.elasticsearch.cluster.metadata.MetaData;
@@ -38,12 +37,12 @@ import org.elasticsearch.common.io.stream.BytesStreamOutput;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.unit.TimeValue;
+import org.elasticsearch.zookeeper.ZookeeperEnvironment;
+import org.elasticsearch.zookeeper.ZookeeperFactory;
 
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.Callable;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -54,17 +53,9 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
 
     private ZooKeeper zooKeeper;
 
-    private final String zooKeeperHost;
+    private final ZookeeperEnvironment environment;
 
-    private final String clusterNode;
-
-    private final String nodesNode;
-
-    private final String rootNode;
-
-    private final String stateNode;
-
-    private final TimeValue sessionTimeout;
+    private final ZookeeperFactory zookeeperFactory;
 
     private static final int MAX_NODE_SIZE = 1024 * 1024;
 
@@ -74,39 +65,21 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
 
     private final Lock publishingLock = new ReentrantLock();
 
-    @Inject public ZookeeperClientService(Settings settings, ClusterName clusterName) {
+    @Inject public ZookeeperClientService(Settings settings, ZookeeperEnvironment environment, ZookeeperFactory zookeeperFactory) {
         super(settings);
-        zooKeeperHost = componentSettings.get("host");
-        if (zooKeeperHost == null) {
-            throw new ElasticSearchException("Empty ZooKeeper host name");
-        }
-        sessionTimeout = componentSettings.getAsTime("session.timeout", new TimeValue(1, TimeUnit.MINUTES));
-        rootNode = componentSettings.get("root", "/es");
-        clusterNode = rootNode + "/" + componentSettings.get("cluster", clusterName.value());
-        nodesNode = clusterNode + "/" + "nodes";
-        stateNode = clusterNode + "/" + "state";
+        this.environment = environment;
+        this.zookeeperFactory = zookeeperFactory;
         initClusterStatePersistence();
     }
 
     @Override protected void doStart() throws ElasticSearchException {
         try {
-            zooKeeper = zookeeperCall("Starting zookeeper client",
-                    new Callable<ZooKeeper>() {
-                        @Override public ZooKeeper call() throws Exception {
-                            return new ZooKeeper(zooKeeperHost, (int) sessionTimeout.millis(), new Watcher() {
-                                @Override public void process(WatchedEvent event) {
-                                }
-                            });
-                        }
-                    }
-            );
-            createNode(rootNode);
-            createNode(clusterNode);
-            createNode(nodesNode);
-            createNode(stateNode);
+            zooKeeper = zookeeperFactory.newZooKeeper();
+            createNode(environment.rootNodePath());
+            createNode(environment.clusterNodePath());
+            createNode(environment.nodesNodePath());
+            createNode(environment.stateNodePath());
         } catch (InterruptedException e) {
-            throw new ZookeeperClientException("Cannot start zookeeper client", e);
-        } catch (KeeperException e) {
             throw new ZookeeperClientException("Cannot start zookeeper client", e);
         }
     }
@@ -146,7 +119,7 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
             try {
                 byte[] leader = zookeeperCall("Getting master data", new Callable<byte[]>() {
                     @Override public byte[] call() throws Exception {
-                        return zooKeeper.getData(masterPath(), watcher, null);
+                        return zooKeeper.getData(environment.masterNodePath(), watcher, null);
                     }
                 });
                 if (leader != null) {
@@ -158,7 +131,7 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
                 try {
                     zookeeperCall("Cannot create leader node", new Callable<Object>() {
                         @Override public Object call() throws Exception {
-                            zooKeeper.create(masterPath(), id.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+                            zooKeeper.create(environment.masterNodePath(), id.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
                             return null;
                         }
                     });
@@ -199,14 +172,14 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
             try {
                 Stat stat = zookeeperCall("Checking if master exists", new Callable<Stat>() {
                     @Override public Stat call() throws Exception {
-                        return zooKeeper.exists(masterPath(), createdWatcher);
+                        return zooKeeper.exists(environment.masterNodePath(), createdWatcher);
                     }
                 });
 
                 if (stat != null) {
                     byte[] leader = zookeeperCall("Getting master data", new Callable<byte[]>() {
                         @Override public byte[] call() throws Exception {
-                            return zooKeeper.getData(masterPath(), deletedWatcher, null);
+                            return zooKeeper.getData(environment.masterNodePath(), deletedWatcher, null);
                         }
                     });
                     if (leader != null) {
@@ -334,7 +307,7 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
 
             List<String> children = zookeeperCall("Cannot list nodes", new Callable<List<String>>() {
                 @Override public List<String> call() throws Exception {
-                    return zooKeeper.getChildren(nodesNode, watcher);
+                    return zooKeeper.getChildren(environment.nodesNodePath(), watcher);
                 }
             });
 
@@ -365,7 +338,7 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
     @Override public void publishClusterState(ClusterState state) throws ElasticSearchException, InterruptedException {
         publishingLock.lock();
         try {
-            final String statePath = stateNode + "/" + "state";
+            final String statePath = environment.stateNodePath() + "/" + "state";
             final BytesStreamOutput buf = new BytesStreamOutput();
             buf.writeLong(state.version());
             for (ClusterStatePart<?> part : this.parts) {
@@ -402,7 +375,24 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
                 new Watcher() {
                     @Override public void process(WatchedEvent event) {
                         try {
+                            logger.trace("retrieveClusterState {} ", event);
                             if (event.getType() == Watcher.Event.EventType.NodeDataChanged) {
+                                ClusterState clusterState = retrieveClusterState(newClusterStateListener);
+                                if (clusterState != null) {
+                                    newClusterStateListener.onNewClusterState(clusterState);
+                                }
+                            }
+                        } catch (InterruptedException ex) {
+                            // Ignore
+                        }
+                    }
+                } : null;
+        final Watcher createdWatcher = (newClusterStateListener != null) ?
+                new Watcher() {
+                    @Override public void process(WatchedEvent event) {
+                        try {
+                            logger.trace("retrieveClusterState {} ", event);
+                            if (event.getType() == Watcher.Event.EventType.NodeCreated) {
                                 ClusterState clusterState = retrieveClusterState(newClusterStateListener);
                                 if (clusterState != null) {
                                     newClusterStateListener.onNewClusterState(clusterState);
@@ -415,12 +405,19 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
                 } : null;
         publishingLock.lock();
         try {
-            final String statePath = stateNode + "/" + "state";
+            final String statePath = environment.stateNodePath() + "/" + "state";
             byte[] stateBuf = zookeeperCall("Cannot read state node", new Callable<byte[]>() {
                 @Override public byte[] call() throws Exception {
-                    return zooKeeper.getData(statePath, watcher, null);
+                    if(zooKeeper.exists(statePath, createdWatcher) != null) {
+                        return zooKeeper.getData(statePath, watcher, null);
+                    } else {
+                        return null;
+                    }
                 }
             });
+            if(stateBuf == null) {
+                return null;
+            }
             final BytesStreamInput buf = new BytesStreamInput(stateBuf);
             ClusterState.Builder builder = ClusterState.newClusterStateBuilder()
                     .version(buf.readLong());
@@ -532,11 +529,19 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
     }
 
     private void createNode(final String path) throws ElasticSearchException, InterruptedException {
+        if(!path.startsWith("/")) {
+            throw new ZookeeperClientException("Path " + path + " doesn't start with \"/\"");
+        }
         try {
             zookeeperCall("Cannot create leader node", new Callable<Object>() {
                 @Override public Object call() throws Exception {
-                    if (zooKeeper.exists(path, null) == null) {
-                        zooKeeper.create(path, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+                    String[] nodes = path.split("/");
+                    String currentPath = "";
+                    for(int i=1; i<nodes.length; i++) {
+                        currentPath = currentPath + "/" + nodes[i];
+                        if (zooKeeper.exists(currentPath, null) == null) {
+                            zooKeeper.create(currentPath, new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+                        }
                     }
                     return null;
                 }
@@ -548,18 +553,9 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
         }
     }
 
-    private String clusterPath(String path) {
-        return clusterNode + "/" + path;
-    }
-
-    private String masterPath() {
-        return clusterPath("leader");
-    }
-
     private String nodePath(String id) {
-        return nodesNode + "/" + id;
+        return environment.nodesNodePath() + "/" + id;
     }
-
 
     private String extractId(String path) {
         int index = path.lastIndexOf('/');
@@ -615,7 +611,7 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
         }
 
         private String internalPublishClusterStatePart(T statePart) throws ElasticSearchException, InterruptedException {
-            final String path = stateNode + "/" + statePartName + "_";
+            final String path = environment.stateNodePath() + "/" + statePartName + "_";
             String rootPath;
             try {
                 BytesStreamOutput streamOutput = new BytesStreamOutput();
