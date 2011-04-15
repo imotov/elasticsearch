@@ -27,7 +27,7 @@ import org.elasticsearch.common.settings.Settings;
 /**
  * @author imotov
  */
-public class ZookeeperEnvironment {
+public class ZooKeeperEnvironment {
 
     private final String rootNodePath;
 
@@ -43,7 +43,7 @@ public class ZookeeperEnvironment {
 
     private final String masterNodePath;
 
-    @Inject public ZookeeperEnvironment(Settings settings, ClusterName clusterName) {
+    @Inject public ZooKeeperEnvironment(Settings settings, ClusterName clusterName) {
         rootNodePath = settings.get("zookeeper.root", "/es");
         clusterNodePath = rootNodePath + "/" + settings.get("zookeeper.cluster", clusterName.value());
         nodesNodePath = clusterNodePath + "/" + "nodes";

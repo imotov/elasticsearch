@@ -17,15 +17,20 @@
  * under the License.
  */
 
-package org.elasticsearch.discovery.zookeeper.embedded;
+package org.elasticsearch.discovery.zookeeper.client;
 
-import org.elasticsearch.common.component.LifecycleComponent;
+import org.elasticsearch.ElasticSearchException;
 
 /**
  * @author imotov
  */
-public interface EmbeddedZookeeper extends LifecycleComponent<EmbeddedZookeeper> {
-    public int port();
+public class ZooKeeperClientException extends ElasticSearchException {
 
-    public void expireSession(long sessionId);
+    public ZooKeeperClientException(String msg) {
+        super(msg);
+    }
+
+    public ZooKeeperClientException(String msg, Throwable cause) {
+        super(msg, cause);
+    }
 }

@@ -22,7 +22,7 @@ package org.elasticsearch.common.settings.zookeeper;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
-import org.elasticsearch.discovery.zookeeper.AbstractZookeeperTests;
+import org.elasticsearch.discovery.zookeeper.AbstractZooKeeperTests;
 import org.testng.annotations.Test;
 
 import java.util.Map;
@@ -34,7 +34,7 @@ import static org.hamcrest.Matchers.*;
 /**
  * @author imotov
  */
-public class ZookeeperSettingsLoaderTests extends AbstractZookeeperTests {
+public class ZooKeeperSettingsLoaderTests extends AbstractZooKeeperTests {
     @Test public void testSettingsLoader() throws Exception {
         putSettings("# Global\n"
                 + "test:\n"
@@ -45,7 +45,7 @@ public class ZookeeperSettingsLoaderTests extends AbstractZookeeperTests {
                 + "  global.override: clusterVersion\n"
                 + "  cluster.data: clusterData", false);
 
-        Map<String, String> settings = ZookeeperSettingsLoader.loadZookeeperSettings(defaultSettings());
+        Map<String, String> settings = ZooKeeperSettingsLoader.loadZooKeeperSettings(defaultSettings());
         assertThat(settings, notNullValue());
         assertThat(settings.size(), equalTo(3));
         assertThat(settings.get("test.global.data"), equalTo("globalData"));
@@ -54,13 +54,13 @@ public class ZookeeperSettingsLoaderTests extends AbstractZookeeperTests {
     }
 
     private void putSettings(String settings, boolean global) throws Exception {
-        ZooKeeper zooKeeper = zookeeperFactory().newZooKeeper();
+        ZooKeeper zooKeeper = zooKeeperFactory().newZooKeeper();
         try {
             String settingsNode;
             if (global) {
-                settingsNode = zookeeperEnvironment().globalSettingsNodePath();
+                settingsNode = zooKeeperEnvironment().globalSettingsNodePath();
             } else {
-                settingsNode = zookeeperEnvironment().clusterSettingsNodePath();
+                settingsNode = zooKeeperEnvironment().clusterSettingsNodePath();
             }
             int i=0;
             while(true) {

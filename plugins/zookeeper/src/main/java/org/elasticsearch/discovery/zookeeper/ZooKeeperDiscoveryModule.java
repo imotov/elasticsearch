@@ -17,20 +17,21 @@
  * under the License.
  */
 
-package org.elasticsearch.discovery.zookeeper.client;
+package org.elasticsearch.discovery.zookeeper;
 
-import org.elasticsearch.ElasticSearchException;
+import org.elasticsearch.common.inject.AbstractModule;
+import org.elasticsearch.discovery.Discovery;
+import org.elasticsearch.discovery.zookeeper.client.ZooKeeperClient;
+import org.elasticsearch.discovery.zookeeper.client.ZooKeeperClientService;
+
 
 /**
  * @author imotov
  */
-public class ZookeeperClientException extends ElasticSearchException {
+public class ZooKeeperDiscoveryModule extends AbstractModule {
 
-    public ZookeeperClientException(String msg) {
-        super(msg);
-    }
-
-    public ZookeeperClientException(String msg, Throwable cause) {
-        super(msg, cause);
+    @Override protected void configure() {
+        bind(Discovery.class).to(ZooKeeperDiscovery.class).asEagerSingleton();
+        bind(ZooKeeperClient.class).to(ZooKeeperClientService.class).asEagerSingleton();
     }
 }

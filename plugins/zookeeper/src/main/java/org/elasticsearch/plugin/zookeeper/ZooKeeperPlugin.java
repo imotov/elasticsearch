@@ -22,9 +22,9 @@ package org.elasticsearch.plugin.zookeeper;
 import org.elasticsearch.common.collect.Lists;
 import org.elasticsearch.common.inject.Module;
 import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.settings.zookeeper.ZookeeperSettingsLoader;
+import org.elasticsearch.common.settings.zookeeper.ZooKeeperSettingsLoader;
 import org.elasticsearch.plugins.AbstractPlugin;
-import org.elasticsearch.zookeeper.ZookeeperModule;
+import org.elasticsearch.zookeeper.ZooKeeperModule;
 
 import java.util.Collection;
 import java.util.Map;
@@ -32,11 +32,11 @@ import java.util.Map;
 /**
  * @author imotov
  */
-public class ZookeeperPlugin extends AbstractPlugin {
+public class ZooKeeperPlugin extends AbstractPlugin {
 
     private final Settings settings;
 
-    public ZookeeperPlugin(Settings settings) {
+    public ZooKeeperPlugin(Settings settings) {
         this.settings = settings;
     }
 
@@ -45,20 +45,20 @@ public class ZookeeperPlugin extends AbstractPlugin {
     }
 
     @Override public String description() {
-        return "Zookeeper Plugin";
+        return "ZooKeeper Plugin";
     }
 
     @Override public Collection<Class<? extends Module>> modules() {
         Collection<Class<? extends Module>> modules = Lists.newArrayList();
         if (settings.getAsBoolean("zookeeper.enabled", true)) {
-            modules.add(ZookeeperModule.class);
+            modules.add(ZooKeeperModule.class);
         }
         return modules;
     }
 
     @Override public Map<String, String> additionalSettings() {
         if (settings.getAsBoolean("zookeeper.settings.enabled", true)) {
-            return ZookeeperSettingsLoader.loadZookeeperSettings(settings);
+            return ZooKeeperSettingsLoader.loadZooKeeperSettings(settings);
         } else {
             return super.additionalSettings();
         }

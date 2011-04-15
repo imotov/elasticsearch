@@ -17,21 +17,15 @@
  * under the License.
  */
 
-package org.elasticsearch.discovery.zookeeper;
+package org.elasticsearch.discovery.zookeeper.embedded;
 
-import org.elasticsearch.common.inject.AbstractModule;
-import org.elasticsearch.discovery.Discovery;
-import org.elasticsearch.discovery.zookeeper.client.ZookeeperClient;
-import org.elasticsearch.discovery.zookeeper.client.ZookeeperClientService;
-
+import org.elasticsearch.common.component.LifecycleComponent;
 
 /**
  * @author imotov
  */
-public class ZookeeperDiscoveryModule extends AbstractModule {
+public interface EmbeddedZooKeeper extends LifecycleComponent<EmbeddedZooKeeper> {
+    public int port();
 
-    @Override protected void configure() {
-        bind(Discovery.class).to(ZookeeperDiscovery.class).asEagerSingleton();
-        bind(ZookeeperClient.class).to(ZookeeperClientService.class).asEagerSingleton();
-    }
+    public void expireSession(long sessionId);
 }

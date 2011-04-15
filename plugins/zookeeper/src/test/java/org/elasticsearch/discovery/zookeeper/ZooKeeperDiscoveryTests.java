@@ -33,8 +33,8 @@ import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.Loggers;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.discovery.zookeeper.client.ZookeeperClient;
-import org.elasticsearch.discovery.zookeeper.embedded.EmbeddedZookeeperService;
+import org.elasticsearch.discovery.zookeeper.client.ZooKeeperClient;
+import org.elasticsearch.discovery.zookeeper.embedded.EmbeddedZooKeeperService;
 import org.elasticsearch.env.Environment;
 import org.elasticsearch.index.query.xcontent.QueryBuilders;
 import org.elasticsearch.node.Node;
@@ -63,11 +63,11 @@ import static org.hamcrest.Matchers.*;
 /**
  * @author imotov
  */
-public class ZookeeperDiscoveryTests {
+public class ZooKeeperDiscoveryTests {
 
     protected final ESLogger logger = Loggers.getLogger(getClass());
 
-    protected EmbeddedZookeeperService embeddedZookeeperService;
+    protected EmbeddedZooKeeperService embeddedZooKeeperService;
 
     protected Random rand = new Random();
 
@@ -143,12 +143,12 @@ public class ZookeeperDiscoveryTests {
     @BeforeClass public void startZooKeeper() {
         Settings settings = ImmutableSettings.Builder.EMPTY_SETTINGS;
         Environment tempEnvironment = new Environment(settings);
-        embeddedZookeeperService = new EmbeddedZookeeperService(settings, tempEnvironment);
-        embeddedZookeeperService.start();
+        embeddedZooKeeperService = new EmbeddedZooKeeperService(settings, tempEnvironment);
+        embeddedZooKeeperService.start();
         putDefaultSettings(ImmutableSettings.settingsBuilder()
-                .put("zookeeper.host", "localhost:" + embeddedZookeeperService.port())
+                .put("zookeeper.host", "localhost:" + embeddedZooKeeperService.port())
                 .put("discovery.zookeeper.state_publishing.enabled", true)
-                .put("discovery.type", "zookeeper")
+                .put("discovery.type", "zoo_keeper")
                 .put("transport.type", "local")
         );
 
@@ -159,8 +159,8 @@ public class ZookeeperDiscoveryTests {
     }
 
     @AfterClass public void stopZooKeeper() {
-        embeddedZookeeperService.stop();
-        embeddedZookeeperService.close();
+        embeddedZooKeeperService.stop();
+        embeddedZooKeeperService.close();
     }
 
     @Test public void testSingleNodeStartup() throws Exception {
@@ -513,9 +513,9 @@ public class ZookeeperDiscoveryTests {
         return node.injector().getInstance(ClusterService.class);
     }
 
-    private ZookeeperClient zookeeperClient(String id) {
+    private ZooKeeperClient zooKeeperClient(String id) {
         InternalNode node = (InternalNode) node(id);
-        return node.injector().getInstance(ZookeeperClient.class);
+        return node.injector().getInstance(ZooKeeperClient.class);
     }
 
     private boolean nodeExists(String id, ClusterState state) {
@@ -575,7 +575,7 @@ public class ZookeeperDiscoveryTests {
     }
 
     private void expireSession(String id) {
-        embeddedZookeeperService.expireSession(zookeeperClient(id).sessionId());
+        embeddedZooKeeperService.expireSession(zooKeeperClient(id).sessionId());
     }
 
 }

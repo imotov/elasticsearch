@@ -30,7 +30,7 @@ import org.elasticsearch.common.transport.LocalTransportAddress;
 import org.elasticsearch.discovery.zookeeper.client.NodeCreatedListener;
 import org.elasticsearch.discovery.zookeeper.client.NodeDeletedListener;
 import org.elasticsearch.discovery.zookeeper.client.NodeListChangedListener;
-import org.elasticsearch.discovery.zookeeper.client.ZookeeperClient;
+import org.elasticsearch.discovery.zookeeper.client.ZooKeeperClient;
 import org.testng.annotations.Test;
 
 import java.util.ArrayList;
@@ -47,15 +47,15 @@ import static org.hamcrest.Matchers.*;
 /**
  * @author imotov
  */
-public class ZookeeperClientTests extends AbstractZookeeperTests {
+public class ZooKeeperClientTests extends AbstractZooKeeperTests {
 
     @Test public void testStartStop() {
 
     }
 
     @Test public void testElectionSequence() throws Exception {
-        ZookeeperClient zk1 = buildZookeeper();
-        ZookeeperClient zk2 = buildZookeeper();
+        ZooKeeperClient zk1 = buildZooKeeper();
+        ZooKeeperClient zk2 = buildZooKeeper();
         final boolean[] callbackForSelf = new boolean[1];
 
         assertThat(zk1.electMaster("id1", new NodeDeletedListener() {
@@ -82,9 +82,9 @@ public class ZookeeperClientTests extends AbstractZookeeperTests {
     }
 
     @Test public void testThreeNodeElection() throws Exception {
-        ZookeeperClient zk1 = buildZookeeper();
-        final ZookeeperClient zk2 = buildZookeeper();
-        final ZookeeperClient zk3 = buildZookeeper();
+        ZooKeeperClient zk1 = buildZooKeeper();
+        final ZooKeeperClient zk2 = buildZooKeeper();
+        final ZooKeeperClient zk3 = buildZooKeeper();
         final String[] masters = new String[2];
 
         assertThat(zk1.electMaster("id1", null), equalTo("id1"));
@@ -126,7 +126,7 @@ public class ZookeeperClientTests extends AbstractZookeeperTests {
     }
 
     @Test public void testRegisterNode() throws Exception {
-        ZookeeperClient zk1 = buildZookeeper();
+        ZooKeeperClient zk1 = buildZooKeeper();
 
         final CountDownLatch latch = new CountDownLatch(1);
 
@@ -144,7 +144,7 @@ public class ZookeeperClientTests extends AbstractZookeeperTests {
     }
 
     @Test public void testNodeInfo() throws Exception {
-        ZookeeperClient zk1 = buildZookeeper();
+        ZooKeeperClient zk1 = buildZooKeeper();
 
         zk1.registerNode(buildDiscoveryNode("node1"), null);
 
@@ -160,11 +160,11 @@ public class ZookeeperClientTests extends AbstractZookeeperTests {
 
     private class RelistListener implements NodeListChangedListener {
 
-        private ZookeeperClient zk;
+        private ZooKeeperClient zk;
         private List<List<String>> lists;
         private CountDownLatch latch;
 
-        public RelistListener(ZookeeperClient zk, List<List<String>> lists, CountDownLatch latch) {
+        public RelistListener(ZooKeeperClient zk, List<List<String>> lists, CountDownLatch latch) {
             this.zk = zk;
             this.lists = lists;
             this.latch = latch;
@@ -190,7 +190,7 @@ public class ZookeeperClientTests extends AbstractZookeeperTests {
 
     @Test public void testListNodes() throws Exception {
         List<List<String>> lists = new ArrayList<List<String>>();
-        ZookeeperClient zk1 = buildZookeeper();
+        ZooKeeperClient zk1 = buildZooKeeper();
         CountDownLatch latch = new CountDownLatch(4);
         RelistListener listener = new RelistListener(zk1, lists, latch);
         assertThat(zk1.listNodes(listener).size(), equalTo(0));
@@ -209,8 +209,8 @@ public class ZookeeperClientTests extends AbstractZookeeperTests {
     }
 
     @Test public void testFindMasterWithNoInitialMaster() throws Exception {
-        ZookeeperClient zk1 = buildZookeeper();
-        ZookeeperClient zk2 = buildZookeeper();
+        ZooKeeperClient zk1 = buildZooKeeper();
+        ZooKeeperClient zk2 = buildZooKeeper();
         final AtomicBoolean deletedCalled = new AtomicBoolean();
         final CountDownLatch latch = new CountDownLatch(1);
 
@@ -231,8 +231,8 @@ public class ZookeeperClientTests extends AbstractZookeeperTests {
     }
 
     @Test public void testFindMasterWithInitialMaster() throws Exception {
-        ZookeeperClient zk1 = buildZookeeper();
-        ZookeeperClient zk2 = buildZookeeper();
+        ZooKeeperClient zk1 = buildZooKeeper();
+        ZooKeeperClient zk2 = buildZooKeeper();
         final AtomicBoolean createdCalled = new AtomicBoolean();
         final AtomicBoolean deletedCalled = new AtomicBoolean();
         final CountDownLatch latch = new CountDownLatch(1);
@@ -273,7 +273,7 @@ public class ZookeeperClientTests extends AbstractZookeeperTests {
                 .nodes(nodes)
                 .build();
 
-        ZookeeperClient zk1 = buildZookeeper();
+        ZooKeeperClient zk1 = buildZooKeeper();
         zk1.publishClusterState(initialState);
 
         ClusterState retrievedState = zk1.retrieveClusterState(null);

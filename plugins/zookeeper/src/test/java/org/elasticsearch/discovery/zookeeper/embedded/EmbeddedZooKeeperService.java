@@ -36,12 +36,12 @@ import java.net.InetSocketAddress;
 /**
  * @author imotov
  */
-public class EmbeddedZookeeperService extends AbstractLifecycleComponent<EmbeddedZookeeper> implements EmbeddedZookeeper {
+public class EmbeddedZooKeeperService extends AbstractLifecycleComponent<EmbeddedZooKeeper> implements EmbeddedZooKeeper {
     private ZooKeeperServer zooKeeperServer;
 
     private NIOServerCnxn.Factory cnxnFactory;
 
-    public EmbeddedZookeeperService(Settings settings, Environment environment) {
+    public EmbeddedZooKeeperService(Settings settings, Environment environment) {
         super(settings);
         try {
             zooKeeperServer = new ZooKeeperServer();
@@ -65,7 +65,7 @@ public class EmbeddedZookeeperService extends AbstractLifecycleComponent<Embedde
                 }
             }
         } catch (Exception ex) {
-            logger.error("Zookeeper initialization failed ", ex);
+            logger.error("ZooKeeper initialization failed ", ex);
         }
 
     }
@@ -74,9 +74,9 @@ public class EmbeddedZookeeperService extends AbstractLifecycleComponent<Embedde
         try {
             cnxnFactory.startup(zooKeeperServer);
         } catch (IOException e) {
-            throw new ElasticSearchException("Cannot start zookeeper", e);
+            throw new ElasticSearchException("Cannot start ZooKeeper", e);
         } catch (InterruptedException e) {
-            throw new ElasticSearchException("Zookeeper startup interrupted", e);
+            throw new ElasticSearchException("ZooKeeper startup interrupted", e);
         }
     }
 

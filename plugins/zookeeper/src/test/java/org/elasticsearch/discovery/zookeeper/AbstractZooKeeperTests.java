@@ -24,12 +24,12 @@ import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.Loggers;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.discovery.zookeeper.client.ZookeeperClient;
-import org.elasticsearch.discovery.zookeeper.client.ZookeeperClientService;
-import org.elasticsearch.discovery.zookeeper.embedded.EmbeddedZookeeperService;
+import org.elasticsearch.discovery.zookeeper.client.ZooKeeperClient;
+import org.elasticsearch.discovery.zookeeper.client.ZooKeeperClientService;
+import org.elasticsearch.discovery.zookeeper.embedded.EmbeddedZooKeeperService;
 import org.elasticsearch.env.Environment;
-import org.elasticsearch.zookeeper.ZookeeperEnvironment;
-import org.elasticsearch.zookeeper.ZookeeperFactory;
+import org.elasticsearch.zookeeper.ZooKeeperEnvironment;
+import org.elasticsearch.zookeeper.ZooKeeperFactory;
 import org.testng.annotations.*;
 
 import java.io.File;
@@ -42,19 +42,19 @@ import static org.elasticsearch.common.settings.ImmutableSettings.settingsBuilde
 /**
  * @author imotov
  */
-public abstract class AbstractZookeeperTests {
+public abstract class AbstractZooKeeperTests {
 
     protected final ESLogger logger = Loggers.getLogger(getClass());
 
-    protected EmbeddedZookeeperService embeddedZooKeeperService;
+    protected EmbeddedZooKeeperService embeddedZooKeeperService;
 
-    protected final List<ZookeeperClient> zookeeperClients = new ArrayList<ZookeeperClient>();
+    protected final List<ZooKeeperClient> zooKeeperClients = new ArrayList<ZooKeeperClient>();
 
     private Settings defaultSettings = ImmutableSettings.Builder.EMPTY_SETTINGS;
 
-    private ZookeeperEnvironment environment;
+    private ZooKeeperEnvironment environment;
 
-    private ZookeeperFactory zookeeperFactory;
+    private ZooKeeperFactory zooKeeperFactory;
 
     public void putDefaultSettings(Settings.Builder settings) {
         putDefaultSettings(settings.build());
@@ -67,17 +67,17 @@ public abstract class AbstractZookeeperTests {
 
     @BeforeClass public void startZooKeeper() throws IOException, InterruptedException {
         Environment tempEnvironment = new Environment(defaultSettings);
-        File zookeeperDataDirectory = new File(tempEnvironment.dataFile(), "zookeeper");
-        logger.info("Deleting zookeeper directory {}", zookeeperDataDirectory);
-        deleteDirectory(zookeeperDataDirectory);
-        embeddedZooKeeperService = new EmbeddedZookeeperService(defaultSettings, tempEnvironment);
+        File zooKeeperDataDirectory = new File(tempEnvironment.dataFile(), "zookeeper");
+        logger.info("Deleting zookeeper directory {}", zooKeeperDataDirectory);
+        deleteDirectory(zooKeeperDataDirectory);
+        embeddedZooKeeperService = new EmbeddedZooKeeperService(defaultSettings, tempEnvironment);
         embeddedZooKeeperService.start();
         putDefaultSettings(ImmutableSettings.settingsBuilder()
                 .put(defaultSettings)
                 .put("zookeeper.host", "localhost:" + embeddedZooKeeperService.port()));
 
-        zookeeperFactory = new ZookeeperFactory(defaultSettings);
-        environment = new ZookeeperEnvironment(defaultSettings, ClusterName.clusterNameFromSettings(defaultSettings));
+        zooKeeperFactory = new ZooKeeperFactory(defaultSettings);
+        environment = new ZooKeeperEnvironment(defaultSettings, ClusterName.clusterNameFromSettings(defaultSettings));
     }
 
     @AfterClass public void stopZooKeeper() {
@@ -89,37 +89,37 @@ public abstract class AbstractZookeeperTests {
     }
 
     @AfterMethod public void stopZooKeeperClients() {
-        for (ZookeeperClient zookeeperClient : zookeeperClients) {
-            logger.info("Closing {}" + zookeeperClient);
-            zookeeperClient.stop();
-            zookeeperClient.close();
+        for (ZooKeeperClient zooKeeperClient : zooKeeperClients) {
+            logger.info("Closing {}" + zooKeeperClient);
+            zooKeeperClient.stop();
+            zooKeeperClient.close();
         }
-        zookeeperClients.clear();
+        zooKeeperClients.clear();
     }
 
-    public ZookeeperClient buildZookeeper() {
-        return buildZookeeper(ImmutableSettings.Builder.EMPTY_SETTINGS);
+    public ZooKeeperClient buildZooKeeper() {
+        return buildZooKeeper(ImmutableSettings.Builder.EMPTY_SETTINGS);
     }
 
-    public ZookeeperClient buildZookeeper(Settings settings) {
+    public ZooKeeperClient buildZooKeeper(Settings settings) {
         String settingsSource = getClass().getName().replace('.', '/') + ".yml";
         Settings finalSettings = settingsBuilder()
                 .loadFromClasspath(settingsSource)
                 .put(defaultSettings)
                 .put(settings)
                 .build();
-        ZookeeperEnvironment environment = new ZookeeperEnvironment(finalSettings, ClusterName.clusterNameFromSettings(defaultSettings));
-        ZookeeperClient zookeeperClient = new ZookeeperClientService(finalSettings, environment, zookeeperFactory);
-        zookeeperClient.start();
-        zookeeperClients.add(zookeeperClient);
-        return zookeeperClient;
+        ZooKeeperEnvironment environment = new ZooKeeperEnvironment(finalSettings, ClusterName.clusterNameFromSettings(defaultSettings));
+        ZooKeeperClient zooKeeperClient = new ZooKeeperClientService(finalSettings, environment, zooKeeperFactory);
+        zooKeeperClient.start();
+        zooKeeperClients.add(zooKeeperClient);
+        return zooKeeperClient;
     }
 
-    public ZookeeperFactory zookeeperFactory() {
-        return zookeeperFactory;
+    public ZooKeeperFactory zooKeeperFactory() {
+        return zooKeeperFactory;
     }
 
-    public ZookeeperEnvironment zookeeperEnvironment() {
+    public ZooKeeperEnvironment zooKeeperEnvironment() {
         return environment;
     }
 

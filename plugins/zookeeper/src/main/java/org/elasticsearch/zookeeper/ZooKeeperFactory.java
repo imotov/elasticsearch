@@ -34,13 +34,13 @@ import java.util.concurrent.TimeUnit;
 /**
  * @author imotov
  */
-public class ZookeeperFactory extends AbstractComponent {
+public class ZooKeeperFactory extends AbstractComponent {
 
     private final String host;
 
     private final TimeValue sessionTimeout;
 
-    @Inject public ZookeeperFactory(Settings settings) {
+    @Inject public ZooKeeperFactory(Settings settings) {
         super(settings);
         host = componentSettings.get("host");
         if (host == null) {

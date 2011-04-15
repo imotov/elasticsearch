@@ -24,10 +24,10 @@ import org.elasticsearch.common.inject.AbstractModule;
 /**
  * @author imotov
  */
-public class ZookeeperModule extends AbstractModule {
+public class ZooKeeperModule extends AbstractModule {
     @Override protected void configure() {
-        bind(ZookeeperEnvironment.class).asEagerSingleton();
-        bind(ZookeeperFactory.class).asEagerSingleton();
+        bind(ZooKeeperEnvironment.class).asEagerSingleton();
+        bind(ZooKeeperFactory.class).asEagerSingleton();
     }
 
 }

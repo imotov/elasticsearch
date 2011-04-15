@@ -26,8 +26,8 @@ import org.elasticsearch.cluster.ClusterName;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.settings.loader.SettingsLoader;
 import org.elasticsearch.common.settings.loader.SettingsLoaderFactory;
-import org.elasticsearch.zookeeper.ZookeeperEnvironment;
-import org.elasticsearch.zookeeper.ZookeeperFactory;
+import org.elasticsearch.zookeeper.ZooKeeperEnvironment;
+import org.elasticsearch.zookeeper.ZooKeeperFactory;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -37,24 +37,24 @@ import java.util.Map;
 /**
  * @author imotov
  */
-public final class ZookeeperSettingsLoader {
+public final class ZooKeeperSettingsLoader {
 
-    private ZookeeperSettingsLoader() {
+    private ZooKeeperSettingsLoader() {
 
     }
 
-    public static Map<String, String> loadZookeeperSettings(Settings settings) {
-        ZookeeperFactory zookeeperFactory = new ZookeeperFactory(settings);
+    public static Map<String, String> loadZooKeeperSettings(Settings settings) {
+        ZooKeeperFactory zooKeeperFactory = new ZooKeeperFactory(settings);
 
         ClusterName clusterName = ClusterName.clusterNameFromSettings(settings);
 
-        ZookeeperEnvironment zookeeperEnvironment = new ZookeeperEnvironment(settings, clusterName);
+        ZooKeeperEnvironment zooKeeperEnvironment = new ZooKeeperEnvironment(settings, clusterName);
 
-        ZooKeeper zooKeeper = zookeeperFactory.newZooKeeper();
+        ZooKeeper zooKeeper = zooKeeperFactory.newZooKeeper();
         Map<String, String> map = new HashMap<String, String>();
         try {
-            map.putAll(loadSettings(zooKeeper, zookeeperEnvironment.globalSettingsNodePath()));
-            map.putAll(loadSettings(zooKeeper, zookeeperEnvironment.clusterSettingsNodePath()));
+            map.putAll(loadSettings(zooKeeper, zooKeeperEnvironment.globalSettingsNodePath()));
+            map.putAll(loadSettings(zooKeeper, zooKeeperEnvironment.clusterSettingsNodePath()));
             return map;
         } catch (InterruptedException e) {
             // Ignore

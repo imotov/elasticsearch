@@ -37,8 +37,8 @@ import org.elasticsearch.common.io.stream.BytesStreamOutput;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.zookeeper.ZookeeperEnvironment;
-import org.elasticsearch.zookeeper.ZookeeperFactory;
+import org.elasticsearch.zookeeper.ZooKeeperEnvironment;
+import org.elasticsearch.zookeeper.ZooKeeperFactory;
 
 import java.io.IOException;
 import java.util.*;
@@ -49,13 +49,13 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * @author imotov
  */
-public class ZookeeperClientService extends AbstractLifecycleComponent<ZookeeperClient> implements ZookeeperClient {
+public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeperClient> implements ZooKeeperClient {
 
     private ZooKeeper zooKeeper;
 
-    private final ZookeeperEnvironment environment;
+    private final ZooKeeperEnvironment environment;
 
-    private final ZookeeperFactory zookeeperFactory;
+    private final ZooKeeperFactory zooKeeperFactory;
 
     private static final int MAX_NODE_SIZE = 1024 * 1024;
 
@@ -65,22 +65,22 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
 
     private final Lock publishingLock = new ReentrantLock();
 
-    @Inject public ZookeeperClientService(Settings settings, ZookeeperEnvironment environment, ZookeeperFactory zookeeperFactory) {
+    @Inject public ZooKeeperClientService(Settings settings, ZooKeeperEnvironment environment, ZooKeeperFactory zooKeeperFactory) {
         super(settings);
         this.environment = environment;
-        this.zookeeperFactory = zookeeperFactory;
+        this.zooKeeperFactory = zooKeeperFactory;
         initClusterStatePersistence();
     }
 
     @Override protected void doStart() throws ElasticSearchException {
         try {
-            zooKeeper = zookeeperFactory.newZooKeeper();
+            zooKeeper = zooKeeperFactory.newZooKeeper();
             createNode(environment.rootNodePath());
             createNode(environment.clusterNodePath());
             createNode(environment.nodesNodePath());
             createNode(environment.stateNodePath());
         } catch (InterruptedException e) {
-            throw new ZookeeperClientException("Cannot start zookeeper client", e);
+            throw new ZooKeeperClientException("Cannot start ZooKeeper client", e);
         }
     }
 
@@ -100,10 +100,10 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
 
     @Override public String electMaster(final String id, final NodeDeletedListener masterDeletedListener) throws ElasticSearchException, InterruptedException {
         if (!lifecycle.started()) {
-            throw new ZookeeperClientException("electMaster is called after was service stopped");
+            throw new ZooKeeperClientException("electMaster is called after was service stopped");
         }
         if (id == null) {
-            throw new ZookeeperClientException("electMaster is called with null id");
+            throw new ZooKeeperClientException("electMaster is called with null id");
         }
 
         final Watcher watcher = (masterDeletedListener != null) ?
@@ -117,7 +117,7 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
 
         while (true) {
             try {
-                byte[] leader = zookeeperCall("Getting master data", new Callable<byte[]>() {
+                byte[] leader = zooKeeperCall("Getting master data", new Callable<byte[]>() {
                     @Override public byte[] call() throws Exception {
                         return zooKeeper.getData(environment.masterNodePath(), watcher, null);
                     }
@@ -129,7 +129,7 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
                 }
             } catch (KeeperException.NoNodeException e) {
                 try {
-                    zookeeperCall("Cannot create leader node", new Callable<Object>() {
+                    zooKeeperCall("Cannot create leader node", new Callable<Object>() {
                         @Override public Object call() throws Exception {
                             zooKeeper.create(environment.masterNodePath(), id.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
                             return null;
@@ -138,17 +138,17 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
                 } catch (KeeperException.NodeExistsException e1) {
                     // Ignore - somebody already created this node since the last time we checked
                 } catch (KeeperException e1) {
-                    throw new ZookeeperClientException("Cannot create leader node", e1);
+                    throw new ZooKeeperClientException("Cannot create leader node", e1);
                 }
             } catch (KeeperException e) {
-                throw new ZookeeperClientException("Cannot obtain leader node", e);
+                throw new ZooKeeperClientException("Cannot obtain leader node", e);
             }
         }
     }
 
     @Override public String findMaster(final NodeCreatedListener masterCreatedListener, final NodeDeletedListener masterDeletedListener) throws ElasticSearchException, InterruptedException {
         if (!lifecycle.started()) {
-            throw new ZookeeperClientException("findMaster is called after was service stopped");
+            throw new ZooKeeperClientException("findMaster is called after was service stopped");
         }
 
         final Watcher createdWatcher = (masterCreatedListener != null) ?
@@ -170,14 +170,14 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
                 } : null;
         while (true) {
             try {
-                Stat stat = zookeeperCall("Checking if master exists", new Callable<Stat>() {
+                Stat stat = zooKeeperCall("Checking if master exists", new Callable<Stat>() {
                     @Override public Stat call() throws Exception {
                         return zooKeeper.exists(environment.masterNodePath(), createdWatcher);
                     }
                 });
 
                 if (stat != null) {
-                    byte[] leader = zookeeperCall("Getting master data", new Callable<byte[]>() {
+                    byte[] leader = zooKeeperCall("Getting master data", new Callable<byte[]>() {
                         @Override public byte[] call() throws Exception {
                             return zooKeeper.getData(environment.masterNodePath(), deletedWatcher, null);
                         }
@@ -194,14 +194,14 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
                 // Node disappeared between exists() and getData() calls
                 // We will try again
             } catch (KeeperException e) {
-                throw new ZookeeperClientException("Cannot obtain leader node", e);
+                throw new ZooKeeperClientException("Cannot obtain leader node", e);
             }
         }
     }
 
     @Override public void registerNode(final DiscoveryNode nodeInfo, final NodeDeletedListener listener) throws ElasticSearchException, InterruptedException {
         if (!lifecycle.started()) {
-            throw new ZookeeperClientException("registerNode is called after service was stopped");
+            throw new ZooKeeperClientException("registerNode is called after service was stopped");
         }
         final String id = nodeInfo.id();
         try {
@@ -218,7 +218,7 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
                 BytesStreamOutput streamOutput = new BytesStreamOutput();
                 nodeInfo.writeTo(streamOutput);
                 final byte[] buf = streamOutput.copiedByteArray();
-                zookeeperCall("Registering node " + id, new Callable<Object>() {
+                zooKeeperCall("Registering node " + id, new Callable<Object>() {
                     @Override public Object call() throws Exception {
                         zooKeeper.create(nodePath, buf, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
                         return null;
@@ -227,24 +227,24 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
             } catch (KeeperException.NodeExistsException e1) {
                 // Ignore
             }
-            zookeeperCall("Registering node " + id, new Callable<Stat>() {
+            zooKeeperCall("Registering node " + id, new Callable<Stat>() {
                 @Override public Stat call() throws Exception {
                     return zooKeeper.exists(nodePath, watcher);
                 }
             });
         } catch (KeeperException e) {
-            throw new ZookeeperClientException("Cannot register node " + id, e);
+            throw new ZooKeeperClientException("Cannot register node " + id, e);
         } catch (IOException e) {
-            throw new ZookeeperClientException("Cannot register node " + id, e);
+            throw new ZooKeeperClientException("Cannot register node " + id, e);
         }
     }
 
     @Override public DiscoveryNode nodeInfo(final String id) throws ElasticSearchException, InterruptedException {
         if (!lifecycle.started()) {
-            throw new ZookeeperClientException("nodeInfo is called after was service stopped");
+            throw new ZooKeeperClientException("nodeInfo is called after was service stopped");
         }
         try {
-            byte[] buf = zookeeperCall("Node Info for node " + id, new Callable<byte[]>() {
+            byte[] buf = zooKeeperCall("Node Info for node " + id, new Callable<byte[]>() {
                 @Override public byte[] call() throws Exception {
                     return zooKeeper.getData(nodePath(id), null, null);
 
@@ -258,9 +258,9 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
         } catch (KeeperException.NoNodeException e) {
             return null;
         } catch (KeeperException e) {
-            throw new ZookeeperClientException("Cannot get data for node " + id, e);
+            throw new ZooKeeperClientException("Cannot get data for node " + id, e);
         } catch (IOException e) {
-            throw new ZookeeperClientException("Cannot register node " + id, e);
+            throw new ZooKeeperClientException("Cannot register node " + id, e);
         }
     }
 
@@ -269,30 +269,30 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
     }
 
     @Override public void syncClusterState() throws ElasticSearchException, InterruptedException {
-        // To prepare for publishing master state, make sure that we are in sync with zookeeper
+        // To prepare for publishing master state, make sure that we are in sync with zooKeeper
         retrieveClusterState(null);
     }
 
     @Override public void unregisterNode(final String id) throws ElasticSearchException, InterruptedException {
         if (!lifecycle.started()) {
-            throw new ZookeeperClientException("unregisterNode is called after was service stopped");
+            throw new ZooKeeperClientException("unregisterNode is called after was service stopped");
         }
         try {
             final String nodePath = nodePath(id);
-            zookeeperCall("Cannot create leader node", new Callable<Object>() {
+            zooKeeperCall("Cannot create leader node", new Callable<Object>() {
                 @Override public Object call() throws Exception {
                     zooKeeper.delete(nodePath, -1);
                     return null;
                 }
             });
         } catch (KeeperException e) {
-            throw new ZookeeperClientException("Cannot unregister node" + id, e);
+            throw new ZooKeeperClientException("Cannot unregister node" + id, e);
         }
     }
 
     @Override public Set<String> listNodes(final NodeListChangedListener listener) throws ElasticSearchException, InterruptedException {
         if (!lifecycle.started()) {
-            throw new ZookeeperClientException("listNodes is called after was service stopped");
+            throw new ZooKeeperClientException("listNodes is called after was service stopped");
         }
         Set<String> res = new HashSet<String>();
         final Watcher watcher = (listener != null) ?
@@ -305,7 +305,7 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
                 } : null;
         try {
 
-            List<String> children = zookeeperCall("Cannot list nodes", new Callable<List<String>>() {
+            List<String> children = zooKeeperCall("Cannot list nodes", new Callable<List<String>>() {
                 @Override public List<String> call() throws Exception {
                     return zooKeeper.getChildren(environment.nodesNodePath(), watcher);
                 }
@@ -319,13 +319,13 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
             }
             return res;
         } catch (KeeperException e) {
-            throw new ZookeeperClientException("Cannot list nodes", e);
+            throw new ZooKeeperClientException("Cannot list nodes", e);
         }
     }
 
     @Override public long sessionId() {
         if (!lifecycle.started()) {
-            throw new ZookeeperClientException("sessionId is called after was service stopped");
+            throw new ZooKeeperClientException("sessionId is called after was service stopped");
         }
         return zooKeeper.getSessionId();
     }
@@ -344,7 +344,7 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
             for (ClusterStatePart<?> part : this.parts) {
                 buf.writeUTF(part.publishClusterStatePart(state));
             }
-            zookeeperCall("Cannot publish state", new Callable<Object>() {
+            zooKeeperCall("Cannot publish state", new Callable<Object>() {
                 @Override public Object call() throws Exception {
                     if (zooKeeper.exists(statePath, null) != null) {
                         zooKeeper.setData(statePath, buf.copiedByteArray(), -1);
@@ -360,9 +360,9 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
                 part.purge();
             }
         } catch (KeeperException e) {
-            throw new ZookeeperClientException("Cannot publish state", e);
+            throw new ZooKeeperClientException("Cannot publish state", e);
         } catch (IOException e) {
-            throw new ZookeeperClientException("Cannot publish state", e);
+            throw new ZooKeeperClientException("Cannot publish state", e);
         } finally {
             publishingLock.unlock();
         }
@@ -406,7 +406,7 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
         publishingLock.lock();
         try {
             final String statePath = environment.stateNodePath() + "/" + "state";
-            byte[] stateBuf = zookeeperCall("Cannot read state node", new Callable<byte[]>() {
+            byte[] stateBuf = zooKeeperCall("Cannot read state node", new Callable<byte[]>() {
                 @Override public byte[] call() throws Exception {
                     if(zooKeeper.exists(statePath, createdWatcher) != null) {
                         return zooKeeper.getData(statePath, watcher, null);
@@ -432,9 +432,9 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
         } catch (KeeperException.NoNodeException ex) {
             return null;
         } catch (KeeperException e) {
-            throw new ZookeeperClientException("Cannot retrieve state", e);
+            throw new ZooKeeperClientException("Cannot retrieve state", e);
         } catch (IOException e) {
-            throw new ZookeeperClientException("Cannot retrieve state", e);
+            throw new ZooKeeperClientException("Cannot retrieve state", e);
         } finally {
             publishingLock.unlock();
         }
@@ -530,10 +530,10 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
 
     private void createNode(final String path) throws ElasticSearchException, InterruptedException {
         if(!path.startsWith("/")) {
-            throw new ZookeeperClientException("Path " + path + " doesn't start with \"/\"");
+            throw new ZooKeeperClientException("Path " + path + " doesn't start with \"/\"");
         }
         try {
-            zookeeperCall("Cannot create leader node", new Callable<Object>() {
+            zooKeeperCall("Cannot create leader node", new Callable<Object>() {
                 @Override public Object call() throws Exception {
                     String[] nodes = path.split("/");
                     String currentPath = "";
@@ -549,7 +549,7 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
         } catch (KeeperException.NodeExistsException e) {
             // Ignore - node was already created
         } catch (KeeperException e) {
-            throw new ZookeeperClientException("Cannot create node at " + path, e);
+            throw new ZooKeeperClientException("Cannot create node at " + path, e);
         }
     }
 
@@ -566,20 +566,20 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
         }
     }
 
-    private <T> T zookeeperCall(String reason, Callable<T> callable) throws InterruptedException, KeeperException {
+    private <T> T zooKeeperCall(String reason, Callable<T> callable) throws InterruptedException, KeeperException {
         while (true) {
             try {
                 return callable.call();
             } catch (KeeperException.ConnectionLossException ex) {
                 // Retry
             } catch (KeeperException.SessionExpiredException e) {
-                throw new ZookeeperClientException(reason, e);
+                throw new ZooKeeperClientException(reason, e);
             } catch (KeeperException e) {
                 throw e;
             } catch (InterruptedException e) {
                 throw e;
             } catch (Exception e) {
-                throw new ZookeeperClientException(reason, e);
+                throw new ZooKeeperClientException(reason, e);
             }
         }
     }
@@ -618,7 +618,7 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
                 writeTo(statePart, streamOutput);
                 final int size = streamOutput.size();
                 // Create Root node with version and size of the state part
-                rootPath = zookeeperCall("Cannot " + statePartName + " node", new Callable<String>() {
+                rootPath = zooKeeperCall("Cannot " + statePartName + " node", new Callable<String>() {
                     @Override public String call() throws Exception {
                         return zooKeeper.create(path, Bytes.itoa(size), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
                     }
@@ -629,7 +629,7 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
                 for (int i = 0; i < size; i += MAX_NODE_SIZE) {
                     final String chunkPath = rootPath + "/" + chunkNum;
                     final byte[] chunk = Arrays.copyOfRange(streamOutput.unsafeByteArray(), i, Math.min(size, i + MAX_NODE_SIZE));
-                    zookeeperCall("Cannot " + statePartName + " node", new Callable<String>() {
+                    zooKeeperCall("Cannot " + statePartName + " node", new Callable<String>() {
                         @Override public String call() throws Exception {
                             return zooKeeper.create(chunkPath, chunk, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
                         }
@@ -637,9 +637,9 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
                     chunkNum++;
                 }
             } catch (KeeperException e) {
-                throw new ZookeeperClientException("Cannot create node at " + path, e);
+                throw new ZooKeeperClientException("Cannot create node at " + path, e);
             } catch (IOException e) {
-                throw new ZookeeperClientException("Cannot read " + statePartName + " node at " + path, e);
+                throw new ZooKeeperClientException("Cannot read " + statePartName + " node at " + path, e);
             }
             return rootPath;
         }
@@ -658,7 +658,7 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
         public void purge() throws ElasticSearchException, InterruptedException {
             if (previousPath != null) {
                 try {
-                    zookeeperCall("Cannot delete " + statePartName + " node at " + previousPath, new Callable<Object>() {
+                    zooKeeperCall("Cannot delete " + statePartName + " node at " + previousPath, new Callable<Object>() {
                         @Override public Object call() throws Exception {
                             List<String> children = zooKeeper.getChildren(previousPath, null);
                             for (String child : children) {
@@ -670,14 +670,14 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
                     });
                     previousPath = null;
                 } catch (KeeperException e) {
-                    throw new ZookeeperClientException("Cannot purge " + statePartName + " node at " + previousPath, e);
+                    throw new ZooKeeperClientException("Cannot purge " + statePartName + " node at " + previousPath, e);
                 }
             }
         }
 
         public T internalGetStatePart(final String path) throws ElasticSearchException, InterruptedException {
             try {
-                byte[] sizeBuf = zookeeperCall("Cannot read " + statePartName + " node", new Callable<byte[]>() {
+                byte[] sizeBuf = zooKeeperCall("Cannot read " + statePartName + " node", new Callable<byte[]>() {
                     @Override public byte[] call() throws Exception {
                         return zooKeeper.getData(path, null, null);
                     }
@@ -688,7 +688,7 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
                 BytesStreamOutput buf = new BytesStreamOutput(size);
                 for (int i = 0; i < size; i += MAX_NODE_SIZE) {
                     final String chunkPath = path + "/" + chunkNum;
-                    byte[] chunk = zookeeperCall("Cannot read " + statePartName + " node", new Callable<byte[]>() {
+                    byte[] chunk = zooKeeperCall("Cannot read " + statePartName + " node", new Callable<byte[]>() {
                         @Override public byte[] call() throws Exception {
                             return zooKeeper.getData(chunkPath, null, null);
                         }
@@ -702,9 +702,9 @@ public class ZookeeperClientService extends AbstractLifecycleComponent<Zookeeper
                 // getting deleted - exit
                 return null;
             } catch (KeeperException e) {
-                throw new ZookeeperClientException("Cannot read " + statePartName + " node at " + path, e);
+                throw new ZooKeeperClientException("Cannot read " + statePartName + " node at " + path, e);
             } catch (IOException e) {
-                throw new ZookeeperClientException("Cannot read " + statePartName + " node at " + path, e);
+                throw new ZooKeeperClientException("Cannot read " + statePartName + " node at " + path, e);
             }
         }
 

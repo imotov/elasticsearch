@@ -29,7 +29,7 @@ import java.util.Set;
 /**
  * @author imotov
  */
-public interface ZookeeperClient extends LifecycleComponent<ZookeeperClient> {
+public interface ZooKeeperClient extends LifecycleComponent<ZooKeeperClient> {
 
     public String electMaster(String id, NodeDeletedListener masterDeletedListener) throws ElasticSearchException, InterruptedException;
 
