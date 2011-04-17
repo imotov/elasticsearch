@@ -32,7 +32,7 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.index.Index;
 import org.elasticsearch.index.analysis.AnalysisService;
-import org.elasticsearch.index.cache.bloom.none.NonBloomCache;
+import org.elasticsearch.index.cache.bloom.none.NoneBloomCache;
 import org.elasticsearch.index.deletionpolicy.KeepOnlyLastDeletionPolicy;
 import org.elasticsearch.index.deletionpolicy.SnapshotDeletionPolicy;
 import org.elasticsearch.index.engine.Engine;
@@ -167,9 +167,9 @@ public class SimpleEngineBenchmark {
                     .add(field("content", contentItem)).build();
             ParsedDocument pDoc = new ParsedDocument(sId, sId, "type", null, doc, Lucene.STANDARD_ANALYZER, TRANSLOG_PAYLOAD, false);
             if (create) {
-                engine.create(new Engine.Create(new Term("_id", sId), pDoc));
+                engine.create(new Engine.Create(null, new Term("_id", sId), pDoc));
             } else {
-                engine.index(new Engine.Index(new Term("_id", sId), pDoc));
+                engine.index(new Engine.Index(null, new Term("_id", sId), pDoc));
             }
         }
         engine.refresh(new Engine.Refresh(true));
@@ -281,9 +281,9 @@ public class SimpleEngineBenchmark {
                             .add(field("content", content(id))).build();
                     ParsedDocument pDoc = new ParsedDocument(sId, sId, "type", null, doc, Lucene.STANDARD_ANALYZER, TRANSLOG_PAYLOAD, false);
                     if (create) {
-                        engine.create(new Engine.Create(new Term("_id", sId), pDoc));
+                        engine.create(new Engine.Create(null, new Term("_id", sId), pDoc));
                     } else {
-                        engine.index(new Engine.Index(new Term("_id", sId), pDoc));
+                        engine.index(new Engine.Index(null, new Term("_id", sId), pDoc));
                     }
                 }
             } catch (Exception e) {
@@ -307,8 +307,8 @@ public class SimpleEngineBenchmark {
 
         ThreadPool threadPool = new ThreadPool();
         SnapshotDeletionPolicy deletionPolicy = new SnapshotDeletionPolicy(new KeepOnlyLastDeletionPolicy(shardId, settings));
-        Engine engine = new RobinEngine(shardId, settings, new IndexSettingsService(shardId.index(), settings), store, deletionPolicy, new FsTranslog(shardId, EMPTY_SETTINGS, new File("work/fs-translog"), false), new LogByteSizeMergePolicyProvider(store, new IndexSettingsService(shardId.index(), EMPTY_SETTINGS)),
-                new ConcurrentMergeSchedulerProvider(shardId, settings), new AnalysisService(shardId.index()), new SimilarityService(shardId.index()), new NonBloomCache(shardId.index()));
+        Engine engine = new RobinEngine(shardId, settings, new ThreadPool(), new IndexSettingsService(shardId.index(), settings), store, deletionPolicy, new FsTranslog(shardId, EMPTY_SETTINGS, new File("work/fs-translog"), false), new LogByteSizeMergePolicyProvider(store, new IndexSettingsService(shardId.index(), EMPTY_SETTINGS)),
+                new ConcurrentMergeSchedulerProvider(shardId, settings), new AnalysisService(shardId.index()), new SimilarityService(shardId.index()), new NoneBloomCache(shardId.index()));
         engine.start();
 
         SimpleEngineBenchmark benchmark = new SimpleEngineBenchmark(store, engine)

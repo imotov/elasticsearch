@@ -24,11 +24,12 @@ import org.elasticsearch.cluster.*;
 import org.elasticsearch.cluster.block.ClusterBlock;
 import org.elasticsearch.cluster.block.ClusterBlockLevel;
 import org.elasticsearch.cluster.block.ClusterBlocks;
-import org.elasticsearch.cluster.metadata.IndexMetaData;
-import org.elasticsearch.cluster.metadata.IndexTemplateMetaData;
-import org.elasticsearch.cluster.metadata.MetaData;
-import org.elasticsearch.cluster.metadata.MetaDataCreateIndexService;
+import org.elasticsearch.cluster.metadata.*;
 import org.elasticsearch.cluster.node.DiscoveryNodes;
+import org.elasticsearch.cluster.routing.IndexRoutingTable;
+import org.elasticsearch.cluster.routing.RoutingTable;
+import org.elasticsearch.cluster.routing.allocation.RoutingAllocation;
+import org.elasticsearch.cluster.routing.allocation.ShardsAllocation;
 import org.elasticsearch.common.component.AbstractLifecycleComponent;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.settings.Settings;
@@ -36,15 +37,12 @@ import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.discovery.DiscoveryService;
 import org.elasticsearch.threadpool.ThreadPool;
 
-import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.elasticsearch.cluster.ClusterState.*;
 import static org.elasticsearch.cluster.metadata.MetaData.*;
-import static org.elasticsearch.common.unit.TimeValue.*;
 
 /**
  * @author kimchy (shay.banon)
@@ -56,6 +54,8 @@ public class GatewayService extends AbstractLifecycleComponent<GatewayService> i
     private final Gateway gateway;
 
     private final ThreadPool threadPool;
+
+    private final ShardsAllocation shardsAllocation;
 
     private final ClusterService clusterService;
 
@@ -75,9 +75,10 @@ public class GatewayService extends AbstractLifecycleComponent<GatewayService> i
     private final AtomicBoolean recovered = new AtomicBoolean();
     private final AtomicBoolean scheduledRecovery = new AtomicBoolean();
 
-    @Inject public GatewayService(Settings settings, Gateway gateway, ClusterService clusterService, DiscoveryService discoveryService, MetaDataCreateIndexService createIndexService, ThreadPool threadPool) {
+    @Inject public GatewayService(Settings settings, Gateway gateway, ShardsAllocation shardsAllocation, ClusterService clusterService, DiscoveryService discoveryService, MetaDataCreateIndexService createIndexService, ThreadPool threadPool) {
         super(settings);
         this.gateway = gateway;
+        this.shardsAllocation = shardsAllocation;
         this.clusterService = clusterService;
         this.discoveryService = discoveryService;
         this.createIndexService = createIndexService;
@@ -216,9 +217,16 @@ public class GatewayService extends AbstractLifecycleComponent<GatewayService> i
         }
 
         @Override public void onSuccess(final ClusterState recoveredState) {
-            final AtomicInteger indicesCounter = new AtomicInteger(recoveredState.metaData().indices().size());
             clusterService.submitStateUpdateTask("local-gateway-elected-state", new ProcessedClusterStateUpdateTask() {
                 @Override public ClusterState execute(ClusterState currentState) {
+                    assert currentState.metaData().indices().isEmpty();
+
+                    // remove the block, since we recovered from gateway
+                    ClusterBlocks.Builder blocks = ClusterBlocks.builder()
+                            .blocks(currentState.blocks())
+                            .blocks(recoveredState.blocks())
+                            .removeGlobalBlock(STATE_NOT_RECOVERED_BLOCK);
+
                     MetaData.Builder metaDataBuilder = newMetaDataBuilder()
                             .metaData(currentState.metaData());
 
@@ -227,55 +235,39 @@ public class GatewayService extends AbstractLifecycleComponent<GatewayService> i
                         metaDataBuilder.put(entry.getValue());
                     }
 
-                    return newClusterStateBuilder().state(currentState)
+                    for (IndexMetaData indexMetaData : recoveredState.metaData()) {
+                        metaDataBuilder.put(indexMetaData);
+                        if (indexMetaData.state() == IndexMetaData.State.CLOSE) {
+                            blocks.addIndexBlock(indexMetaData.index(), MetaDataStateIndexService.INDEX_CLOSED_BLOCK);
+                        }
+                    }
+
+                    // update the state to reflect the new metadata and routing
+                    ClusterState updatedState = newClusterStateBuilder().state(currentState)
                             .version(recoveredState.version())
-                            .metaData(metaDataBuilder).build();
+                            .blocks(blocks)
+                            .metaData(metaDataBuilder)
+                            .build();
+
+                    // initialize all index routing tables as empty
+                    RoutingTable.Builder routingTableBuilder = RoutingTable.builder().routingTable(updatedState.routingTable());
+                    for (IndexMetaData indexMetaData : updatedState.metaData().indices().values()) {
+                        if (indexMetaData.state() == IndexMetaData.State.OPEN) {
+                            IndexRoutingTable.Builder indexRoutingBuilder = new IndexRoutingTable.Builder(indexMetaData.index())
+                                    .initializeEmpty(updatedState.metaData().index(indexMetaData.index()), false /*not from API*/);
+                            routingTableBuilder.add(indexRoutingBuilder);
+                        }
+                    }
+
+                    // now, reroute
+                    RoutingAllocation.Result routingResult = shardsAllocation.reroute(newClusterStateBuilder().state(updatedState).routingTable(routingTableBuilder).build());
+
+                    return newClusterStateBuilder().state(updatedState).routingResult(routingResult).build();
                 }
 
                 @Override public void clusterStateProcessed(ClusterState clusterState) {
-                    if (recoveredState.metaData().indices().isEmpty()) {
-                        markMetaDataAsReadFromGateway("success");
-                        latch.countDown();
-                        return;
-                    }
-                    // go over the meta data and create indices, we don't really need to copy over
-                    // the meta data per index, since we create the index and it will be added automatically
-                    for (final IndexMetaData indexMetaData : recoveredState.metaData()) {
-                        try {
-                            createIndexService.createIndex(new MetaDataCreateIndexService.Request(MetaDataCreateIndexService.Request.Origin.GATEWAY, "gateway", indexMetaData.index())
-                                    .settings(indexMetaData.settings())
-                                    .mappingsMetaData(indexMetaData.mappings())
-                                    .state(indexMetaData.state())
-                                    .timeout(timeValueSeconds(30)),
-
-                                    new MetaDataCreateIndexService.Listener() {
-                                        @Override public void onResponse(MetaDataCreateIndexService.Response response) {
-                                            if (indicesCounter.decrementAndGet() == 0) {
-                                                markMetaDataAsReadFromGateway("success");
-                                                latch.countDown();
-                                            }
-                                        }
-
-                                        @Override public void onFailure(Throwable t) {
-                                            logger.error("failed to create index [{}]", t, indexMetaData.index());
-                                            // we report success on index creation failure and do nothing
-                                            // should we disable writing the updated metadata?
-                                            if (indicesCounter.decrementAndGet() == 0) {
-                                                markMetaDataAsReadFromGateway("success");
-                                                latch.countDown();
-                                            }
-                                        }
-                                    });
-                        } catch (IOException e) {
-                            logger.error("failed to create index [{}]", e, indexMetaData.index());
-                            // we report success on index creation failure and do nothing
-                            // should we disable writing the updated metadata?
-                            if (indicesCounter.decrementAndGet() == 0) {
-                                markMetaDataAsReadFromGateway("success");
-                                latch.countDown();
-                            }
-                        }
-                    }
+                    logger.info("recovered [{}] indices into cluster_state", clusterState.metaData().indices().size());
+                    latch.countDown();
                 }
             });
         }
@@ -284,19 +276,5 @@ public class GatewayService extends AbstractLifecycleComponent<GatewayService> i
             // don't remove the block here, we don't want to allow anything in such a case
             logger.error("failed recover state, blocking...", t);
         }
-    }
-
-    private void markMetaDataAsReadFromGateway(String reason) {
-        clusterService.submitStateUpdateTask("gateway (marked as read, reason=" + reason + ")", new ClusterStateUpdateTask() {
-            @Override public ClusterState execute(ClusterState currentState) {
-                if (!currentState.blocks().hasGlobalBlock(STATE_NOT_RECOVERED_BLOCK)) {
-                    return currentState;
-                }
-                // remove the block, since we recovered from gateway
-                ClusterBlocks.Builder blocks = ClusterBlocks.builder().blocks(currentState.blocks()).removeGlobalBlock(STATE_NOT_RECOVERED_BLOCK);
-
-                return newClusterStateBuilder().state(currentState).blocks(blocks).build();
-            }
-        });
     }
 }

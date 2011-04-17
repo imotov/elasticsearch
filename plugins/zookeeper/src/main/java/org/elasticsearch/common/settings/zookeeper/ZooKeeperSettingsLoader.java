@@ -23,6 +23,7 @@ import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
 import org.elasticsearch.ElasticSearchException;
 import org.elasticsearch.cluster.ClusterName;
+import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.settings.loader.SettingsLoader;
 import org.elasticsearch.common.settings.loader.SettingsLoaderFactory;
@@ -43,7 +44,7 @@ public final class ZooKeeperSettingsLoader {
 
     }
 
-    public static Map<String, String> loadZooKeeperSettings(Settings settings) {
+    public static Settings loadZooKeeperSettings(Settings settings) {
         ZooKeeperFactory zooKeeperFactory = new ZooKeeperFactory(settings);
 
         ClusterName clusterName = ClusterName.clusterNameFromSettings(settings);
@@ -53,9 +54,10 @@ public final class ZooKeeperSettingsLoader {
         ZooKeeper zooKeeper = zooKeeperFactory.newZooKeeper();
         Map<String, String> map = new HashMap<String, String>();
         try {
-            map.putAll(loadSettings(zooKeeper, zooKeeperEnvironment.globalSettingsNodePath()));
-            map.putAll(loadSettings(zooKeeper, zooKeeperEnvironment.clusterSettingsNodePath()));
-            return map;
+            return ImmutableSettings.settingsBuilder()
+                    .put(loadSettings(zooKeeper, zooKeeperEnvironment.globalSettingsNodePath()))
+                    .put(loadSettings(zooKeeper, zooKeeperEnvironment.clusterSettingsNodePath()))
+                    .build();
         } catch (InterruptedException e) {
             // Ignore
         } catch (KeeperException e) {
@@ -67,7 +69,7 @@ public final class ZooKeeperSettingsLoader {
                 // Ignore
             }
         }
-        return Collections.emptyMap();
+        return ImmutableSettings.Builder.EMPTY_SETTINGS;
     }
 
     private static Map<String, String> loadSettings(ZooKeeper zooKeeper, String path) throws InterruptedException, KeeperException {

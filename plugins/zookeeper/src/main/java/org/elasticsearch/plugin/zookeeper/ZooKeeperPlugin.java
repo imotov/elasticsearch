@@ -56,7 +56,7 @@ public class ZooKeeperPlugin extends AbstractPlugin {
         return modules;
     }
 
-    @Override public Map<String, String> additionalSettings() {
+    @Override public Settings additionalSettings() {
         if (settings.getAsBoolean("zookeeper.settings.enabled", true)) {
             return ZooKeeperSettingsLoader.loadZooKeeperSettings(settings);
         } else {

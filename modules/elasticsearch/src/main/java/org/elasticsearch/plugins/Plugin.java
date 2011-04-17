@@ -21,6 +21,7 @@ package org.elasticsearch.plugins;
 
 import org.elasticsearch.common.component.LifecycleComponent;
 import org.elasticsearch.common.inject.Module;
+import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.index.CloseableIndexComponent;
 
 import java.util.Collection;
@@ -78,5 +79,5 @@ public interface Plugin {
     /**
      * Additional node settings loaded by the plugin
      */
-    Map<String, String> additionalSettings();
+    Settings additionalSettings();
 }

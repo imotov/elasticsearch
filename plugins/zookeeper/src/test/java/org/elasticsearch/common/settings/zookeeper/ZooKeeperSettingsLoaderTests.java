@@ -22,6 +22,7 @@ package org.elasticsearch.common.settings.zookeeper;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
+import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.discovery.zookeeper.AbstractZooKeeperTests;
 import org.testng.annotations.Test;
 
@@ -45,9 +46,9 @@ public class ZooKeeperSettingsLoaderTests extends AbstractZooKeeperTests {
                 + "  global.override: clusterVersion\n"
                 + "  cluster.data: clusterData", false);
 
-        Map<String, String> settings = ZooKeeperSettingsLoader.loadZooKeeperSettings(defaultSettings());
+        Settings settings = ZooKeeperSettingsLoader.loadZooKeeperSettings(defaultSettings());
         assertThat(settings, notNullValue());
-        assertThat(settings.size(), equalTo(3));
+        assertThat(settings.getAsMap().size(), equalTo(3));
         assertThat(settings.get("test.global.data"), equalTo("globalData"));
         assertThat(settings.get("test.global.override"), equalTo("clusterVersion"));
         assertThat(settings.get("test.cluster.data"), equalTo("clusterData"));

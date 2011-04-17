@@ -53,10 +53,13 @@ import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.index.similarity.SimilarityService;
 import org.elasticsearch.index.store.Store;
 import org.elasticsearch.index.translog.Translog;
+import org.elasticsearch.threadpool.ThreadPool;
 
 import java.io.IOException;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -77,9 +80,15 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
 
     private volatile int termIndexDivisor;
 
+    private volatile int indexConcurrency;
+
     private final ReadWriteLock rwl = new ReentrantReadWriteLock();
 
     private final AtomicBoolean optimizeMutex = new AtomicBoolean();
+
+    private final long gcDeletesInMillis;
+
+    private final ThreadPool threadPool;
 
     private final IndexSettingsService indexSettingsService;
 
@@ -128,7 +137,12 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
 
     private final ApplySettings applySettings = new ApplySettings();
 
-    @Inject public RobinEngine(ShardId shardId, @IndexSettings Settings indexSettings, IndexSettingsService indexSettingsService,
+    private Throwable failedEngine = null;
+    private final Object failedEngineMutex = new Object();
+    private final CopyOnWriteArrayList<FailedEngineListener> failedEngineListeners = new CopyOnWriteArrayList<FailedEngineListener>();
+
+    @Inject public RobinEngine(ShardId shardId, @IndexSettings Settings indexSettings, ThreadPool threadPool,
+                               IndexSettingsService indexSettingsService,
                                Store store, SnapshotDeletionPolicy deletionPolicy, Translog translog,
                                MergePolicyProvider mergePolicyProvider, MergeSchedulerProvider mergeScheduler,
                                AnalysisService analysisService, SimilarityService similarityService,
@@ -138,11 +152,13 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
         Preconditions.checkNotNull(deletionPolicy, "Snapshot deletion policy must be provided to the engine");
         Preconditions.checkNotNull(translog, "Translog must be provided to the engine");
 
+        this.gcDeletesInMillis = indexSettings.getAsTime("index.gc_deletes", TimeValue.timeValueSeconds(60)).millis();
         this.indexingBufferSize = componentSettings.getAsBytesSize("index_buffer_size", new ByteSizeValue(64, ByteSizeUnit.MB)); // not really important, as it is set by the IndexingMemory manager
         this.termIndexInterval = indexSettings.getAsInt("index.term_index_interval", IndexWriterConfig.DEFAULT_TERM_INDEX_INTERVAL);
         this.termIndexDivisor = indexSettings.getAsInt("index.term_index_divisor", 1); // IndexReader#DEFAULT_TERMS_INDEX_DIVISOR
         this.asyncLoadBloomFilter = componentSettings.getAsBoolean("async_load_bloom", true); // Here for testing, should always be true
 
+        this.threadPool = threadPool;
         this.indexSettingsService = indexSettingsService;
         this.store = store;
         this.deletionPolicy = deletionPolicy;
@@ -153,8 +169,9 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
         this.similarityService = similarityService;
         this.bloomCache = bloomCache;
 
-        this.versionMap = new ConcurrentHashMap<String, VersionValue>(1000);
-        this.dirtyLocks = new Object[componentSettings.getAsInt("concurrency", 10000)];
+        this.indexConcurrency = indexSettings.getAsInt("index.index_concurrency", IndexWriterConfig.DEFAULT_MAX_THREAD_STATES);
+        this.versionMap = new ConcurrentHashMap<String, VersionValue>();
+        this.dirtyLocks = new Object[indexConcurrency * 10]; // we multiply it by 10 to have enough...
         for (int i = 0; i < dirtyLocks.length; i++) {
             dirtyLocks[i] = new Object();
         }
@@ -188,6 +205,10 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
                 logger.warn("failed to flush after setting shard to inactive", e);
             }
         }
+    }
+
+    @Override public void addFailedEngineListener(FailedEngineListener listener) {
+        failedEngineListeners.add(listener);
     }
 
     @Override public void start() throws EngineException {
@@ -240,12 +261,15 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
         try {
             IndexWriter writer = this.indexWriter;
             if (writer == null) {
-                throw new EngineClosedException(shardId);
+                throw new EngineClosedException(shardId, failedEngine);
             }
             innerCreate(create, writer);
             dirty = true;
             possibleMergeNeeded = true;
         } catch (IOException e) {
+            throw new CreateFailedEngineException(shardId, create, e);
+        } catch (OutOfMemoryError e) {
+            failEngine(e);
             throw new CreateFailedEngineException(shardId, create, e);
         } finally {
             rwl.readLock().unlock();
@@ -258,7 +282,7 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
             if (create.origin() == Operation.Origin.RECOVERY) {
                 // on recovery, we get the actual version we want to use
                 if (create.version() != 0) {
-                    versionMap.put(create.uid().text(), new VersionValue(create.version(), false));
+                    versionMap.put(create.uid().text(), new VersionValue(create.version(), false, threadPool.estimatedTimeInMillis()));
                 }
                 uidField.version(create.version());
                 writer.addDocument(create.doc(), create.analyzer());
@@ -269,7 +293,11 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
                 if (versionValue == null) {
                     currentVersion = loadCurrentVersionFromIndex(create.uid());
                 } else {
-                    currentVersion = versionValue.version();
+                    if (versionValue.delete() && (threadPool.estimatedTimeInMillis() - versionValue.time()) > gcDeletesInMillis) {
+                        currentVersion = -1; // deleted, and GC
+                    } else {
+                        currentVersion = versionValue.version();
+                    }
                 }
 
                 // same logic as index
@@ -325,7 +353,7 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
                     throw new DocumentAlreadyExistsEngineException(shardId, create.type(), create.id());
                 }
 
-                versionMap.put(create.uid().text(), new VersionValue(updatedVersion, false));
+                versionMap.put(create.uid().text(), new VersionValue(updatedVersion, false, threadPool.estimatedTimeInMillis()));
                 uidField.version(updatedVersion);
                 create.version(updatedVersion);
 
@@ -340,13 +368,16 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
         try {
             IndexWriter writer = this.indexWriter;
             if (writer == null) {
-                throw new EngineClosedException(shardId);
+                throw new EngineClosedException(shardId, failedEngine);
             }
 
             innerIndex(index, writer);
             dirty = true;
             possibleMergeNeeded = true;
         } catch (IOException e) {
+            throw new IndexFailedEngineException(shardId, index, e);
+        } catch (OutOfMemoryError e) {
+            failEngine(e);
             throw new IndexFailedEngineException(shardId, index, e);
         } finally {
             rwl.readLock().unlock();
@@ -359,7 +390,7 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
             if (index.origin() == Operation.Origin.RECOVERY) {
                 // on recovery, we get the actual version we want to use
                 if (index.version() != 0) {
-                    versionMap.put(index.uid().text(), new VersionValue(index.version(), false));
+                    versionMap.put(index.uid().text(), new VersionValue(index.version(), false, threadPool.estimatedTimeInMillis()));
                 }
                 uidField.version(index.version());
                 writer.updateDocument(index.uid(), index.doc(), index.analyzer());
@@ -370,7 +401,11 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
                 if (versionValue == null) {
                     currentVersion = loadCurrentVersionFromIndex(index.uid());
                 } else {
-                    currentVersion = versionValue.version();
+                    if (versionValue.delete() && (threadPool.estimatedTimeInMillis() - versionValue.time()) > gcDeletesInMillis) {
+                        currentVersion = -1; // deleted, and GC
+                    } else {
+                        currentVersion = versionValue.version();
+                    }
                 }
 
                 long updatedVersion;
@@ -415,7 +450,7 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
                     updatedVersion = index.version();
                 }
 
-                versionMap.put(index.uid().text(), new VersionValue(updatedVersion, false));
+                versionMap.put(index.uid().text(), new VersionValue(updatedVersion, false, threadPool.estimatedTimeInMillis()));
                 uidField.version(updatedVersion);
                 index.version(updatedVersion);
 
@@ -435,12 +470,15 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
         try {
             IndexWriter writer = this.indexWriter;
             if (writer == null) {
-                throw new EngineClosedException(shardId);
+                throw new EngineClosedException(shardId, failedEngine);
             }
             innerDelete(delete, writer);
             dirty = true;
             possibleMergeNeeded = true;
         } catch (IOException e) {
+            throw new DeleteFailedEngineException(shardId, delete, e);
+        } catch (OutOfMemoryError e) {
+            failEngine(e);
             throw new DeleteFailedEngineException(shardId, delete, e);
         } finally {
             rwl.readLock().unlock();
@@ -452,7 +490,7 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
             if (delete.origin() == Operation.Origin.RECOVERY) {
                 // update the version with the exact version from recovery, assuming we have it
                 if (delete.version() != 0) {
-                    versionMap.put(delete.uid().text(), new VersionValue(delete.version(), true));
+                    versionMap.put(delete.uid().text(), new VersionValue(delete.version(), true, threadPool.estimatedTimeInMillis()));
                 }
 
                 writer.deleteDocuments(delete.uid());
@@ -463,7 +501,11 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
                 if (versionValue == null) {
                     currentVersion = loadCurrentVersionFromIndex(delete.uid());
                 } else {
-                    currentVersion = versionValue.version();
+                    if (versionValue.delete() && (threadPool.estimatedTimeInMillis() - versionValue.time()) > gcDeletesInMillis) {
+                        currentVersion = -1; // deleted, and GC
+                    } else {
+                        currentVersion = versionValue.version();
+                    }
                 }
 
                 long updatedVersion;
@@ -510,7 +552,7 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
                     // if its a delete on delete and we have the current delete version, return it
                     delete.version(versionValue.version()).notFound(true);
                 } else {
-                    versionMap.put(delete.uid().text(), new VersionValue(updatedVersion, true));
+                    versionMap.put(delete.uid().text(), new VersionValue(updatedVersion, true, threadPool.estimatedTimeInMillis()));
                     delete.version(updatedVersion);
                     writer.deleteDocuments(delete.uid());
                     translog.add(new Translog.Delete(delete));
@@ -568,7 +610,7 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
             // this engine always acts as if waitForOperations=true
             IndexWriter currentWriter = indexWriter;
             if (currentWriter == null) {
-                throw new EngineClosedException(shardId);
+                throw new EngineClosedException(shardId, failedEngine);
             }
             try {
                 // we need to obtain a mutex here, to make sure we don't leave dangling readers
@@ -591,12 +633,15 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
                 // an index writer got replaced on us, ignore
             } catch (Exception e) {
                 if (indexWriter == null) {
-                    throw new EngineClosedException(shardId);
+                    throw new EngineClosedException(shardId, failedEngine);
                 } else if (currentWriter != indexWriter) {
                     // an index writer got replaced on us, ignore
                 } else {
                     throw new RefreshFailedEngineException(shardId, e);
                 }
+            } catch (OutOfMemoryError e) {
+                failEngine(e);
+                throw new RefreshFailedEngineException(shardId, e);
             }
         } finally {
             rwl.readLock().unlock();
@@ -605,7 +650,7 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
 
     @Override public void flush(Flush flush) throws EngineException {
         if (indexWriter == null) {
-            throw new EngineClosedException(shardId);
+            throw new EngineClosedException(shardId, failedEngine);
         }
         // check outside the lock as well so we can check without blocking on the write lock
         if (disableFlushCounter > 0) {
@@ -621,7 +666,7 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
         rwl.writeLock().lock();
         try {
             if (indexWriter == null) {
-                throw new EngineClosedException(shardId);
+                throw new EngineClosedException(shardId, failedEngine);
             }
             if (disableFlushCounter > 0) {
                 throw new FlushNotAllowedEngineException(shardId, "Recovery is in progress, flush is not allowed");
@@ -643,18 +688,34 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
                     nrtResource = buildNrtResource(indexWriter);
                     current.markForClose();
                     translog.newTranslog(newTransactionLogId());
-                } catch (IOException e) {
+                } catch (Exception e) {
+                    throw new FlushFailedEngineException(shardId, e);
+                } catch (OutOfMemoryError e) {
+                    failEngine(e);
                     throw new FlushFailedEngineException(shardId, e);
                 }
             } else {
                 try {
                     indexWriter.commit();
                     translog.newTranslog(newTransactionLogId());
-                } catch (IOException e) {
+                } catch (Exception e) {
+                    throw new FlushFailedEngineException(shardId, e);
+                } catch (OutOfMemoryError e) {
+                    failEngine(e);
                     throw new FlushFailedEngineException(shardId, e);
                 }
             }
-            versionMap.clear();
+            // remove all version except for deletes, which we expire based on GC value
+            long time = threadPool.estimatedTimeInMillis();
+            for (Map.Entry<String, VersionValue> entry : versionMap.entrySet()) {
+                if (entry.getValue().delete()) {
+                    if ((time - entry.getValue().time()) > gcDeletesInMillis) {
+                        versionMap.remove(entry.getKey());
+                    }
+                } else {
+                    versionMap.remove(entry.getKey());
+                }
+            }
             dirty = true; // force a refresh
             // we need to do a refresh here so we sync versioning support
             refresh(new Refresh(true).force(true));
@@ -676,13 +737,16 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
         rwl.readLock().lock();
         try {
             if (indexWriter == null) {
-                throw new EngineClosedException(shardId);
+                throw new EngineClosedException(shardId, failedEngine);
             }
             if (indexWriter.getConfig().getMergePolicy() instanceof EnableMergePolicy) {
                 ((EnableMergePolicy) indexWriter.getConfig().getMergePolicy()).enableMerge();
             }
             indexWriter.maybeMerge();
         } catch (Exception e) {
+            throw new OptimizeFailedEngineException(shardId, e);
+        } catch (OutOfMemoryError e) {
+            failEngine(e);
             throw new OptimizeFailedEngineException(shardId, e);
         } finally {
             rwl.readLock().unlock();
@@ -697,7 +761,7 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
             rwl.readLock().lock();
             try {
                 if (indexWriter == null) {
-                    throw new EngineClosedException(shardId);
+                    throw new EngineClosedException(shardId, failedEngine);
                 }
                 if (indexWriter.getConfig().getMergePolicy() instanceof EnableMergePolicy) {
                     ((EnableMergePolicy) indexWriter.getConfig().getMergePolicy()).enableMerge();
@@ -711,6 +775,9 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
                     indexWriter.optimize(optimize.maxNumSegments(), false);
                 }
             } catch (Exception e) {
+                throw new OptimizeFailedEngineException(shardId, e);
+            } catch (OutOfMemoryError e) {
+                failEngine(e);
                 throw new OptimizeFailedEngineException(shardId, e);
             } finally {
                 if (indexWriter != null && indexWriter.getConfig().getMergePolicy() instanceof EnableMergePolicy) {
@@ -824,13 +891,36 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
     }
 
     @Override public void close() throws ElasticSearchException {
+        rwl.writeLock().lock();
+        try {
+            innerClose();
+        } finally {
+            rwl.writeLock().unlock();
+        }
+    }
+
+    private void failEngine(Throwable failure) {
+        synchronized (failedEngineMutex) {
+            if (failedEngine != null) {
+                return;
+            }
+            logger.warn("failed engine", failure);
+            failedEngine = failure;
+            for (FailedEngineListener listener : failedEngineListeners) {
+                listener.onFailedEngine(shardId, failure);
+            }
+            innerClose();
+        }
+    }
+
+    private void innerClose() {
         if (closed) {
             return;
         }
         indexSettingsService.removeListener(applySettings);
         closed = true;
-        rwl.writeLock().lock();
         this.versionMap.clear();
+        this.failedEngineListeners.clear();
         try {
             if (indexingSearcher.get() != null) {
                 indexingSearcher.get().release();
@@ -847,11 +937,10 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
                     // ignore
                 }
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             logger.debug("failed to rollback writer on close", e);
         } finally {
             indexWriter = null;
-            rwl.writeLock().unlock();
         }
     }
 
@@ -906,6 +995,7 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
             config.setRAMBufferSizeMB(indexingBufferSize.mbFrac());
             config.setTermIndexInterval(termIndexInterval);
             config.setReaderTermsIndexDivisor(termIndexDivisor);
+            config.setMaxThreadStates(indexConcurrency);
 
             indexWriter = new IndexWriter(store.directory(), config);
 
@@ -925,20 +1015,27 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
         @Override public void onRefreshSettings(Settings settings) {
             int termIndexInterval = settings.getAsInt("index.term_index_interval", RobinEngine.this.termIndexInterval);
             int termIndexDivisor = settings.getAsInt("index.term_index_divisor", RobinEngine.this.termIndexDivisor); // IndexReader#DEFAULT_TERMS_INDEX_DIVISOR
+            int indexConcurrency = settings.getAsInt("index.index_concurrency", RobinEngine.this.indexConcurrency);
             boolean requiresFlushing = false;
             if (termIndexInterval != RobinEngine.this.termIndexInterval || termIndexDivisor != RobinEngine.this.termIndexDivisor) {
                 rwl.readLock().lock();
                 try {
                     if (termIndexInterval != RobinEngine.this.termIndexInterval) {
-                        logger.info("updating term_index_interval from [{}] to [{}]", RobinEngine.this.termIndexInterval, termIndexInterval);
+                        logger.info("updating index.term_index_interval from [{}] to [{}]", RobinEngine.this.termIndexInterval, termIndexInterval);
                         RobinEngine.this.termIndexInterval = termIndexInterval;
                         indexWriter.getConfig().setTermIndexInterval(termIndexInterval);
                     }
                     if (termIndexDivisor != RobinEngine.this.termIndexDivisor) {
-                        logger.info("updating term_index_divisor from [{}] to [{}]", RobinEngine.this.termIndexDivisor, termIndexDivisor);
+                        logger.info("updating index.term_index_divisor from [{}] to [{}]", RobinEngine.this.termIndexDivisor, termIndexDivisor);
                         RobinEngine.this.termIndexDivisor = termIndexDivisor;
                         indexWriter.getConfig().setReaderTermsIndexDivisor(termIndexDivisor);
                         // we want to apply this right now for readers, even "current" ones
+                        requiresFlushing = true;
+                    }
+                    if (indexConcurrency != RobinEngine.this.indexConcurrency) {
+                        logger.info("updating index.index_concurrency from [{}] to [{}]", RobinEngine.this.indexConcurrency, indexConcurrency);
+                        RobinEngine.this.indexConcurrency = indexConcurrency;
+                        // we have to flush in this case, since it only applies on a new index writer
                         requiresFlushing = true;
                     }
                 } finally {
@@ -989,12 +1086,18 @@ public class RobinEngine extends AbstractIndexShardComponent implements Engine {
     }
 
     static class VersionValue {
-        private long version;
+        private final long version;
         private final boolean delete;
+        private final long time;
 
-        VersionValue(long version, boolean delete) {
+        VersionValue(long version, boolean delete, long time) {
             this.version = version;
             this.delete = delete;
+            this.time = time;
+        }
+
+        public long time() {
+            return this.time;
         }
 
         public long version() {

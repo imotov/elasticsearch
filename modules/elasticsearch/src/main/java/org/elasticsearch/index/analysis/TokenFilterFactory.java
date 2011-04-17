@@ -20,12 +20,11 @@
 package org.elasticsearch.index.analysis;
 
 import org.apache.lucene.analysis.TokenStream;
-import org.elasticsearch.index.IndexComponent;
 
 /**
  * @author kimchy (Shay Banon)
  */
-public interface TokenFilterFactory extends IndexComponent {
+public interface TokenFilterFactory {
 
     String name();
 

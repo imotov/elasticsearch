@@ -35,9 +35,11 @@ import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.util.concurrent.ThreadSafe;
 import org.elasticsearch.index.VersionType;
 import org.elasticsearch.index.deletionpolicy.SnapshotIndexCommit;
+import org.elasticsearch.index.mapper.DocumentMapper;
 import org.elasticsearch.index.mapper.ParsedDocument;
 import org.elasticsearch.index.mapper.UidFieldMapper;
 import org.elasticsearch.index.shard.IndexShardComponent;
+import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.index.translog.Translog;
 
 /**
@@ -54,6 +56,8 @@ public interface Engine extends IndexShardComponent, CloseableComponent {
     TimeValue defaultRefreshInterval();
 
     void updateIndexingBufferSize(ByteSizeValue indexingBufferSize);
+
+    void addFailedEngineListener(FailedEngineListener listener);
 
     /**
      * Starts the Engine.
@@ -102,6 +106,10 @@ public interface Engine extends IndexShardComponent, CloseableComponent {
     <T> T snapshot(SnapshotHandler<T> snapshotHandler) throws EngineException;
 
     void recover(RecoveryHandler recoveryHandler) throws EngineException;
+
+    static interface FailedEngineListener {
+        void onFailedEngine(ShardId shardId, Throwable t);
+    }
 
     /**
      * Recovery allow to start the recovery process. It is built of three phases.
@@ -284,16 +292,31 @@ public interface Engine extends IndexShardComponent, CloseableComponent {
         Origin origin();
     }
 
-    static class Create implements Operation {
+    static interface IndexingOperation extends Operation {
+
+        ParsedDocument parsedDoc();
+
+        Document doc();
+
+        DocumentMapper docMapper();
+    }
+
+    static class Create implements IndexingOperation {
+        private final DocumentMapper docMapper;
         private final Term uid;
         private final ParsedDocument doc;
         private long version;
         private VersionType versionType = VersionType.INTERNAL;
         private Origin origin = Origin.PRIMARY;
 
-        public Create(Term uid, ParsedDocument doc) {
+        public Create(DocumentMapper docMapper, Term uid, ParsedDocument doc) {
+            this.docMapper = docMapper;
             this.uid = uid;
             this.doc = doc;
+        }
+
+        public DocumentMapper docMapper() {
+            return this.docMapper;
         }
 
         @Override public Type opType() {
@@ -368,16 +391,22 @@ public interface Engine extends IndexShardComponent, CloseableComponent {
         }
     }
 
-    static class Index implements Operation {
+    static class Index implements IndexingOperation {
+        private final DocumentMapper docMapper;
         private final Term uid;
         private final ParsedDocument doc;
         private long version;
         private VersionType versionType = VersionType.INTERNAL;
         private Origin origin = Origin.PRIMARY;
 
-        public Index(Term uid, ParsedDocument doc) {
+        public Index(DocumentMapper docMapper, Term uid, ParsedDocument doc) {
+            this.docMapper = docMapper;
             this.uid = uid;
             this.doc = doc;
+        }
+
+        public DocumentMapper docMapper() {
+            return this.docMapper;
         }
 
         @Override public Type opType() {

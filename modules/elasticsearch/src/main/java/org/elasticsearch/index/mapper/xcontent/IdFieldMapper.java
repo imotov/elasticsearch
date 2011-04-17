@@ -28,6 +28,7 @@ import org.elasticsearch.index.mapper.MapperParsingException;
 import org.elasticsearch.index.mapper.MergeMappingException;
 
 import java.io.IOException;
+import java.util.ArrayDeque;
 
 /**
  * @author kimchy (shay.banon)
@@ -57,22 +58,28 @@ public class IdFieldMapper extends AbstractFieldMapper<String> implements org.el
         }
 
         @Override public IdFieldMapper build(BuilderContext context) {
-            return new IdFieldMapper(name, indexName, store, termVector, boost, omitNorms, omitTermFreqAndPositions);
+            return new IdFieldMapper(name, indexName, index, store, termVector, boost, omitNorms, omitTermFreqAndPositions);
         }
     }
+
+    private final ThreadLocal<ArrayDeque<Field>> fieldCache = new ThreadLocal<ArrayDeque<Field>>() {
+        @Override protected ArrayDeque<Field> initialValue() {
+            return new ArrayDeque<Field>();
+        }
+    };
 
     protected IdFieldMapper() {
         this(Defaults.NAME, Defaults.INDEX_NAME);
     }
 
     protected IdFieldMapper(String name, String indexName) {
-        this(name, indexName, Defaults.STORE, Defaults.TERM_VECTOR, Defaults.BOOST,
+        this(name, indexName, Defaults.INDEX, Defaults.STORE, Defaults.TERM_VECTOR, Defaults.BOOST,
                 Defaults.OMIT_NORMS, Defaults.OMIT_TERM_FREQ_AND_POSITIONS);
     }
 
-    protected IdFieldMapper(String name, String indexName, Field.Store store, Field.TermVector termVector,
+    protected IdFieldMapper(String name, String indexName, Field.Index index, Field.Store store, Field.TermVector termVector,
                             float boost, boolean omitNorms, boolean omitTermFreqAndPositions) {
-        super(new Names(name, indexName, indexName, name), Defaults.INDEX, store, termVector, boost, omitNorms, omitTermFreqAndPositions,
+        super(new Names(name, indexName, indexName, name), index, store, termVector, boost, omitNorms, omitTermFreqAndPositions,
                 Lucene.KEYWORD_ANALYZER, Lucene.KEYWORD_ANALYZER);
     }
 
@@ -105,29 +112,60 @@ public class IdFieldMapper extends AbstractFieldMapper<String> implements org.el
             }
             context.id(id);
             context.parsedId(ParseContext.ParsedIdState.PARSED);
-            return new Field(names.indexName(), context.id(), store, index);
+            if (index == Field.Index.NO && store == Field.Store.NO) {
+                return null;
+            }
+            ArrayDeque<Field> cache = fieldCache.get();
+            Field field = cache.poll();
+            if (field == null) {
+                field = new Field(names.indexName(), "", store, index);
+            }
+            field.setValue(context.id());
+            return field;
         } else if (context.parsedIdState() == ParseContext.ParsedIdState.EXTERNAL) {
             if (context.id() == null) {
                 throw new MapperParsingException("No id mapping with [" + names.name() + "] found in the content, and not explicitly set");
             }
-            return new Field(names.indexName(), context.id(), store, index);
+            if (index == Field.Index.NO && store == Field.Store.NO) {
+                return null;
+            }
+            ArrayDeque<Field> cache = fieldCache.get();
+            Field field = cache.poll();
+            if (field == null) {
+                field = new Field(names.indexName(), "", store, index);
+            }
+            field.setValue(context.id());
+            return field;
         } else {
             throw new MapperParsingException("Illegal parsed id state");
         }
+    }
+
+    @Override public void processFieldAfterIndex(Fieldable field) {
+        Field field1 = (Field) field;
+        field1.setValue("");
+        fieldCache.get().add(field1);
     }
 
     @Override protected String contentType() {
         return CONTENT_TYPE;
     }
 
+    @Override public void close() {
+        fieldCache.remove();
+    }
+
     @Override public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         // if all are defaults, no sense to write it at all
-        if (store == Defaults.STORE) {
+        if (store == Defaults.STORE && index == Defaults.INDEX) {
             return builder;
         }
         builder.startObject(CONTENT_TYPE);
         if (store != Defaults.STORE) {
             builder.field("store", store.name().toLowerCase());
+        }
+        if (index != Defaults.INDEX) {
+            builder.field("index", index.name().toLowerCase());
         }
         builder.endObject();
         return builder;

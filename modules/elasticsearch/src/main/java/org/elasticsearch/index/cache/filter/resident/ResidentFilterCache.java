@@ -62,6 +62,7 @@ public class ResidentFilterCache extends AbstractConcurrentMapFilterCache implem
         if (expire != null) {
             mapMaker.expireAfterAccess(expire.nanos(), TimeUnit.NANOSECONDS);
         }
+        mapMaker.evictionListener(this);
         return mapMaker.makeMap();
     }
 
@@ -71,6 +72,10 @@ public class ResidentFilterCache extends AbstractConcurrentMapFilterCache implem
 
     @Override public long evictions() {
         return evictions.get();
+    }
+
+    @Override public long memEvictions() {
+        return 0;
     }
 
     @Override public void onEviction(Filter filter, DocSet docSet) {
