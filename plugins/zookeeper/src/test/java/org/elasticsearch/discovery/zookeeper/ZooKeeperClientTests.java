@@ -27,9 +27,6 @@ import org.elasticsearch.cluster.routing.IndexRoutingTable;
 import org.elasticsearch.cluster.routing.RoutingTable;
 import org.elasticsearch.cluster.routing.ShardRoutingState;
 import org.elasticsearch.common.transport.LocalTransportAddress;
-import org.elasticsearch.discovery.zookeeper.client.NodeCreatedListener;
-import org.elasticsearch.discovery.zookeeper.client.NodeDeletedListener;
-import org.elasticsearch.discovery.zookeeper.client.NodeListChangedListener;
 import org.elasticsearch.discovery.zookeeper.client.ZooKeeperClient;
 import org.testng.annotations.Test;
 
@@ -58,7 +55,7 @@ public class ZooKeeperClientTests extends AbstractZooKeeperTests {
         ZooKeeperClient zk2 = buildZooKeeper();
         final boolean[] callbackForSelf = new boolean[1];
 
-        assertThat(zk1.electMaster("id1", new NodeDeletedListener() {
+        assertThat(zk1.electMaster("id1", new ZooKeeperClient.NodeDeletedListener() {
             @Override public void onNodeDeleted(String id) {
                 callbackForSelf[0] = true;
             }
@@ -66,7 +63,7 @@ public class ZooKeeperClientTests extends AbstractZooKeeperTests {
 
         final CountDownLatch latch = new CountDownLatch(1);
 
-        assertThat(zk2.electMaster("id2", new NodeDeletedListener() {
+        assertThat(zk2.electMaster("id2", new ZooKeeperClient.NodeDeletedListener() {
             @Override public void onNodeDeleted(String id) {
                 latch.countDown();
             }
@@ -91,7 +88,7 @@ public class ZooKeeperClientTests extends AbstractZooKeeperTests {
 
         final CountDownLatch latch = new CountDownLatch(2);
 
-        assertThat(zk2.electMaster("id2", new NodeDeletedListener() {
+        assertThat(zk2.electMaster("id2", new ZooKeeperClient.NodeDeletedListener() {
             @Override public void onNodeDeleted(String id) {
                 try {
                     masters[0] = zk2.electMaster("id2", null);
@@ -102,7 +99,7 @@ public class ZooKeeperClientTests extends AbstractZooKeeperTests {
             }
         }), equalTo("id1"));
 
-        assertThat(zk3.electMaster("id3", new NodeDeletedListener() {
+        assertThat(zk3.electMaster("id3", new ZooKeeperClient.NodeDeletedListener() {
             @Override public void onNodeDeleted(String id) {
                 try {
                     masters[1] = zk2.electMaster("id2", null);
@@ -130,7 +127,7 @@ public class ZooKeeperClientTests extends AbstractZooKeeperTests {
 
         final CountDownLatch latch = new CountDownLatch(1);
 
-        zk1.registerNode(buildDiscoveryNode("node1"), new NodeDeletedListener() {
+        zk1.registerNode(buildDiscoveryNode("node1"), new ZooKeeperClient.NodeDeletedListener() {
             @Override public void onNodeDeleted(String id) {
                 assertThat(id, equalTo("node1"));
                 latch.countDown();
@@ -158,7 +155,7 @@ public class ZooKeeperClientTests extends AbstractZooKeeperTests {
     }
 
 
-    private class RelistListener implements NodeListChangedListener {
+    private class RelistListener implements ZooKeeperClient.NodeListChangedListener {
 
         private ZooKeeperClient zk;
         private List<List<String>> lists;
@@ -171,7 +168,7 @@ public class ZooKeeperClientTests extends AbstractZooKeeperTests {
         }
 
         @Override public synchronized void onNodeListChanged() {
-            NodeListChangedListener listener = null;
+            ZooKeeperClient.NodeListChangedListener listener = null;
             if (latch.getCount() > 1) {
                 listener = this;
             }
@@ -214,11 +211,11 @@ public class ZooKeeperClientTests extends AbstractZooKeeperTests {
         final AtomicBoolean deletedCalled = new AtomicBoolean();
         final CountDownLatch latch = new CountDownLatch(1);
 
-        assertThat(zk1.findMaster(new NodeCreatedListener() {
+        assertThat(zk1.findMaster(new ZooKeeperClient.NodeCreatedListener() {
             @Override public void onNodeCreated(String id) {
                 latch.countDown();
             }
-        }, new NodeDeletedListener() {
+        }, new ZooKeeperClient.NodeDeletedListener() {
             @Override public void onNodeDeleted(String id) {
                 deletedCalled.set(true);
             }
@@ -237,11 +234,11 @@ public class ZooKeeperClientTests extends AbstractZooKeeperTests {
         final AtomicBoolean deletedCalled = new AtomicBoolean();
         final CountDownLatch latch = new CountDownLatch(1);
         assertThat(zk1.electMaster("node1", null), equalTo("node1"));
-        assertThat(zk2.findMaster(new NodeCreatedListener() {
+        assertThat(zk2.findMaster(new ZooKeeperClient.NodeCreatedListener() {
             @Override public void onNodeCreated(String id) {
                 createdCalled.set(true);
             }
-        }, new NodeDeletedListener() {
+        }, new ZooKeeperClient.NodeDeletedListener() {
             @Override public void onNodeDeleted(String id) {
                 latch.countDown();
             }

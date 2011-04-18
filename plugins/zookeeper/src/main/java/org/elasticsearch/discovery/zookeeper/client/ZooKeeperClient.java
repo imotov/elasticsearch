@@ -31,28 +31,113 @@ import java.util.Set;
  */
 public interface ZooKeeperClient extends LifecycleComponent<ZooKeeperClient> {
 
+    /**
+     * Tries to elect node with specified id as a master, returns the elected node id
+     */
     public String electMaster(String id, NodeDeletedListener masterDeletedListener) throws ElasticSearchException, InterruptedException;
 
+    /**
+     * Returns currently elected master or null if no master is present
+     * @param masterCreatedListener triggered when new master is elected
+     * @param masterDeletedListener triggered when elected master disappears
+     * @return elected master or null
+     * @throws ElasticSearchException
+     * @throws InterruptedException
+     */
     public String findMaster(NodeCreatedListener masterCreatedListener, NodeDeletedListener masterDeletedListener) throws ElasticSearchException, InterruptedException;
 
+    /**
+     * Registers the node in the list of live nodes
+     * @param nodeInfo node to register
+     * @param listener triggered if node is deleted
+     * @throws ElasticSearchException
+     * @throws InterruptedException
+     */
     public void registerNode(DiscoveryNode nodeInfo, NodeDeletedListener listener) throws ElasticSearchException, InterruptedException;
 
+    /**
+     * Unregister the node
+     * @param id
+     * @throws ElasticSearchException
+     * @throws InterruptedException
+     */
     public void unregisterNode(String id) throws ElasticSearchException, InterruptedException;
 
+    /**
+     * Lists live nodes
+     * @param listener triggered when list of live nodes changes
+     * @return
+     * @throws ElasticSearchException
+     * @throws InterruptedException
+     */
     public Set<String> listNodes(NodeListChangedListener listener) throws ElasticSearchException, InterruptedException;
 
+    /**
+     * Returns info for live node
+     * @param id
+     * @return
+     * @throws ElasticSearchException
+     * @throws InterruptedException
+     */
     public DiscoveryNode nodeInfo(String id) throws ElasticSearchException, InterruptedException;
 
+    /**
+     * Sets the local node
+     * @param localNode
+     */
     public void localNode(DiscoveryNode localNode);
 
+    /**
+     * Synchronizes cluster state. It needs to be called when node is switching between retrieving cluster state
+     * and publishing cluster state
+     * @throws ElasticSearchException
+     * @throws InterruptedException
+     */
     public void syncClusterState() throws ElasticSearchException, InterruptedException;
 
+    /**
+     * Publish new cluster state
+     * @param state
+     * @throws ElasticSearchException
+     * @throws InterruptedException
+     */
     public void publishClusterState(ClusterState state) throws ElasticSearchException, InterruptedException;
 
+    /**
+     * Retrieves cluster state
+     * @param newClusterStateListener triggered when cluster state changes
+     * @return
+     * @throws ElasticSearchException
+     * @throws InterruptedException
+     */
     public ClusterState retrieveClusterState(NewClusterStateListener newClusterStateListener) throws ElasticSearchException, InterruptedException;
 
+    /**
+     * Returns zookeeper session id. Used for debugging.
+     * @return
+     */
     public long sessionId();
 
+    /**
+     * Checks if zookeeper is connected.
+     * @return
+     */
     public boolean connected();
 
+    interface NewClusterStateListener {
+        public void onNewClusterState(ClusterState clusterState);
+    }
+
+    interface NodeCreatedListener {
+        public void onNodeCreated(String id);
+
+    }
+
+    interface NodeDeletedListener {
+        public void onNodeDeleted(String id);
+    }
+
+    interface NodeListChangedListener {
+        public void onNodeListChanged();
+    }
 }

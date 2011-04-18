@@ -524,14 +524,14 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
         asyncJoinCluster(initial);
     }
 
-    private class MasterGoneListener implements NodeDeletedListener {
+    private class MasterGoneListener implements ZooKeeperClient.NodeDeletedListener {
 
         @Override public void onNodeDeleted(String id) {
             handleMasterGone();
         }
     }
 
-    private class MasterAppearedListener implements NodeCreatedListener {
+    private class MasterAppearedListener implements ZooKeeperClient.NodeCreatedListener {
         boolean initial;
 
         public MasterAppearedListener(boolean initial) {
@@ -544,13 +544,13 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
     }
 
 
-    private class NodeUnregisteredListener implements NodeDeletedListener {
+    private class NodeUnregisteredListener implements ZooKeeperClient.NodeDeletedListener {
         @Override public void onNodeDeleted(String id) {
             handleSelfGone(id);
         }
     }
 
-    private class MasterNodeListChangedListener implements NodeListChangedListener {
+    private class MasterNodeListChangedListener implements ZooKeeperClient.NodeListChangedListener {
 
         @Override public void onNodeListChanged() {
             handleUpdateNodeList();
@@ -563,7 +563,7 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
         }
     }
 
-    private class NewZooKeeperClusterStateListener implements org.elasticsearch.discovery.zookeeper.client.NewClusterStateListener {
+    private class NewZooKeeperClusterStateListener implements ZooKeeperClient.NewClusterStateListener {
 
         @Override public void onNewClusterState(ClusterState clusterState) {
             handleNewClusterStateFromMaster(clusterState);
