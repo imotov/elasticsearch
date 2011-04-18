@@ -50,14 +50,14 @@ public class ZooKeeperPlugin extends AbstractPlugin {
 
     @Override public Collection<Class<? extends Module>> modules() {
         Collection<Class<? extends Module>> modules = Lists.newArrayList();
-        if (settings.getAsBoolean("zookeeper.enabled", true)) {
+        if (settings.getAsBoolean("zookeeper.enabled", false)) {
             modules.add(ZooKeeperModule.class);
         }
         return modules;
     }
 
     @Override public Settings additionalSettings() {
-        if (settings.getAsBoolean("zookeeper.settings.enabled", true)) {
+        if (settings.getAsBoolean("zookeeper.settings.enabled", false)) {
             return ZooKeeperSettingsLoader.loadZooKeeperSettings(settings);
         } else {
             return super.additionalSettings();
