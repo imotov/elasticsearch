@@ -17,28 +17,23 @@
  * under the License.
  */
 
-package org.elasticsearch;
+package org.elasticsearch.index.query.xcontent;
 
-import org.elasticsearch.rest.RestStatus;
+import org.elasticsearch.common.xcontent.XContentBuilder;
 
-/**
- * @author kimchy (Shay Banon)
- */
-public class ElasticSearchIllegalArgumentException extends ElasticSearchException {
+import java.io.IOException;
 
-    public ElasticSearchIllegalArgumentException() {
-        super(null);
+public class TypeFilterBuilder extends BaseFilterBuilder {
+
+    private final String type;
+
+    public TypeFilterBuilder(String type) {
+        this.type = type;
     }
 
-    public ElasticSearchIllegalArgumentException(String msg) {
-        super(msg);
-    }
-
-    public ElasticSearchIllegalArgumentException(String msg, Throwable cause) {
-        super(msg, cause);
-    }
-
-    @Override public RestStatus status() {
-        return RestStatus.BAD_REQUEST;
+    @Override protected void doXContent(XContentBuilder builder, Params params) throws IOException {
+        builder.startObject(TypeFilterParser.NAME);
+        builder.field("value", type);
+        builder.endObject();
     }
 }

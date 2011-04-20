@@ -212,7 +212,6 @@ public class TransportIndexAction extends TransportShardReplicationOperationActi
     @Override protected void postPrimaryOperation(IndexRequest request, PrimaryResponse<IndexResponse> response) {
         Engine.IndexingOperation op = (Engine.IndexingOperation) response.payload();
         if (!Strings.hasLength(request.percolate())) {
-            op.docMapper().processDocumentAfterIndex(op.doc());
             return;
         }
         IndexService indexService = indicesService.indexServiceSafe(request.index());
@@ -221,8 +220,6 @@ public class TransportIndexAction extends TransportShardReplicationOperationActi
             response.response().matches(percolate.matches());
         } catch (Exception e) {
             logger.warn("failed to percolate [{}]", e, request);
-        } finally {
-            op.docMapper().processDocumentAfterIndex(op.doc());
         }
     }
 
@@ -236,13 +233,11 @@ public class TransportIndexAction extends TransportShardReplicationOperationActi
                     .version(request.version())
                     .origin(Engine.Operation.Origin.REPLICA);
             indexShard.index(index);
-            index.docMapper().processDocumentAfterIndex(index.doc());
         } else {
             Engine.Create create = indexShard.prepareCreate(sourceToParse)
                     .version(request.version())
                     .origin(Engine.Operation.Origin.REPLICA);
             indexShard.create(create);
-            create.docMapper().processDocumentAfterIndex(create.doc());
         }
         if (request.refresh()) {
             try {

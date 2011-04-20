@@ -23,12 +23,19 @@ import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.Fieldable;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.search.DeletionAwareConstantScoreQuery;
+import org.apache.lucene.search.Filter;
+import org.apache.lucene.search.PrefixFilter;
+import org.apache.lucene.search.Query;
 import org.elasticsearch.common.lucene.Lucene;
+import org.elasticsearch.common.lucene.search.TermFilter;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.index.mapper.MergeMappingException;
+import org.elasticsearch.index.mapper.Uid;
+import org.elasticsearch.index.mapper.UidFieldMapper;
+import org.elasticsearch.index.query.xcontent.QueryParseContext;
 
 import java.io.IOException;
-import java.util.ArrayDeque;
 
 /**
  * @author kimchy (shay.banon)
@@ -61,12 +68,6 @@ public class TypeFieldMapper extends AbstractFieldMapper<String> implements org.
             return new TypeFieldMapper(name, indexName, index, store, termVector, boost, omitNorms, omitTermFreqAndPositions);
         }
     }
-
-    private final ThreadLocal<ArrayDeque<Field>> fieldCache = new ThreadLocal<ArrayDeque<Field>>() {
-        @Override protected ArrayDeque<Field> initialValue() {
-            return new ArrayDeque<Field>();
-        }
-    };
 
     protected TypeFieldMapper() {
         this(Defaults.NAME, Defaults.INDEX_NAME);
@@ -108,25 +109,26 @@ public class TypeFieldMapper extends AbstractFieldMapper<String> implements org.
         return new Term(names.indexName(), value);
     }
 
+    @Override public Filter fieldFilter(String value) {
+        if (index == Field.Index.NO) {
+            return new PrefixFilter(new Term(UidFieldMapper.NAME, Uid.typePrefix(value)));
+        }
+        return new TermFilter(new Term(names.indexName(), value));
+    }
+
+    @Override public Query fieldQuery(String value, QueryParseContext context) {
+        return new DeletionAwareConstantScoreQuery(context.cacheFilter(fieldFilter(value)));
+    }
+
+    @Override public boolean useFieldQueryWithQueryString() {
+        return true;
+    }
+
     @Override protected Field parseCreateField(ParseContext context) throws IOException {
         if (index == Field.Index.NO && store == Field.Store.NO) {
             return null;
         }
-        ArrayDeque<Field> cache = fieldCache.get();
-        Field field = cache.poll();
-        if (field == null) {
-            field = new Field(names.indexName(), "", store, index);
-        }
-        field.setValue(context.type());
-        return field;
-    }
-
-    @Override public void processFieldAfterIndex(Fieldable field) {
-        fieldCache.get().add((Field) field);
-    }
-
-    @Override public void close() {
-        fieldCache.remove();
+        return new Field(names.indexName(), false, context.type(), store, index, termVector);
     }
 
     @Override protected String contentType() {

@@ -28,7 +28,6 @@ import org.elasticsearch.index.mapper.MapperParsingException;
 import org.elasticsearch.index.mapper.MergeMappingException;
 
 import java.io.IOException;
-import java.util.ArrayDeque;
 
 /**
  * @author kimchy (shay.banon)
@@ -40,7 +39,7 @@ public class IdFieldMapper extends AbstractFieldMapper<String> implements org.el
     public static class Defaults extends AbstractFieldMapper.Defaults {
         public static final String NAME = "_id";
         public static final String INDEX_NAME = "_id";
-        public static final Field.Index INDEX = Field.Index.NOT_ANALYZED;
+        public static final Field.Index INDEX = Field.Index.NO;
         public static final Field.Store STORE = Field.Store.NO;
         public static final boolean OMIT_NORMS = true;
         public static final boolean OMIT_TERM_FREQ_AND_POSITIONS = true;
@@ -62,18 +61,16 @@ public class IdFieldMapper extends AbstractFieldMapper<String> implements org.el
         }
     }
 
-    private final ThreadLocal<ArrayDeque<Field>> fieldCache = new ThreadLocal<ArrayDeque<Field>>() {
-        @Override protected ArrayDeque<Field> initialValue() {
-            return new ArrayDeque<Field>();
-        }
-    };
-
     protected IdFieldMapper() {
-        this(Defaults.NAME, Defaults.INDEX_NAME);
+        this(Defaults.NAME, Defaults.INDEX_NAME, Defaults.INDEX);
     }
 
-    protected IdFieldMapper(String name, String indexName) {
-        this(name, indexName, Defaults.INDEX, Defaults.STORE, Defaults.TERM_VECTOR, Defaults.BOOST,
+    protected IdFieldMapper(Field.Index index) {
+        this(Defaults.NAME, Defaults.INDEX_NAME, index);
+    }
+
+    protected IdFieldMapper(String name, String indexName, Field.Index index) {
+        this(name, indexName, index, Defaults.STORE, Defaults.TERM_VECTOR, Defaults.BOOST,
                 Defaults.OMIT_NORMS, Defaults.OMIT_TERM_FREQ_AND_POSITIONS);
     }
 
@@ -115,13 +112,7 @@ public class IdFieldMapper extends AbstractFieldMapper<String> implements org.el
             if (index == Field.Index.NO && store == Field.Store.NO) {
                 return null;
             }
-            ArrayDeque<Field> cache = fieldCache.get();
-            Field field = cache.poll();
-            if (field == null) {
-                field = new Field(names.indexName(), "", store, index);
-            }
-            field.setValue(context.id());
-            return field;
+            return new Field(names.indexName(), false, context.id(), store, index, termVector);
         } else if (context.parsedIdState() == ParseContext.ParsedIdState.EXTERNAL) {
             if (context.id() == null) {
                 throw new MapperParsingException("No id mapping with [" + names.name() + "] found in the content, and not explicitly set");
@@ -129,30 +120,14 @@ public class IdFieldMapper extends AbstractFieldMapper<String> implements org.el
             if (index == Field.Index.NO && store == Field.Store.NO) {
                 return null;
             }
-            ArrayDeque<Field> cache = fieldCache.get();
-            Field field = cache.poll();
-            if (field == null) {
-                field = new Field(names.indexName(), "", store, index);
-            }
-            field.setValue(context.id());
-            return field;
+            return new Field(names.indexName(), false, context.id(), store, index, termVector);
         } else {
             throw new MapperParsingException("Illegal parsed id state");
         }
     }
 
-    @Override public void processFieldAfterIndex(Fieldable field) {
-        Field field1 = (Field) field;
-        field1.setValue("");
-        fieldCache.get().add(field1);
-    }
-
     @Override protected String contentType() {
         return CONTENT_TYPE;
-    }
-
-    @Override public void close() {
-        fieldCache.remove();
     }
 
     @Override public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
