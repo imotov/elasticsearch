@@ -134,14 +134,15 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
                 }
             } catch (KeeperException.NoNodeException e) {
                 try {
-                    // If master node doesn't exist - we try to create the node
-                    // On the next iteration of the loop we will re-read this node to set watcher
+                    // If master node doesn't exist - we try to create the node and return our id without setting the
+                    // watcher
                     zooKeeperCall("Cannot create leader node", new Callable<Object>() {
                         @Override public Object call() throws Exception {
                             zooKeeper.create(environment.masterNodePath(), id.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
                             return null;
                         }
                     });
+                    return id;
                 } catch (KeeperException.NodeExistsException e1) {
                     // If node is already created - we will try to read created node on the next iteration of the loop
                 } catch (KeeperException e1) {
@@ -210,21 +211,13 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
         }
     }
 
-    @Override public void registerNode(final DiscoveryNode nodeInfo, final NodeDeletedListener listener) throws ElasticSearchException, InterruptedException {
+    @Override public void registerNode(final DiscoveryNode nodeInfo) throws ElasticSearchException, InterruptedException {
         if (!lifecycle.started()) {
             throw new ZooKeeperClientException("registerNode is called after service was stopped");
         }
         final String id = nodeInfo.id();
         try {
             final String nodePath = nodePath(id);
-            final Watcher watcher = (listener != null) ?
-                    new Watcher() {
-                        @Override public void process(WatchedEvent event) {
-                            if (event.getType() == Watcher.Event.EventType.NodeDeleted) {
-                                listener.onNodeDeleted(extractId(event.getPath()));
-                            }
-                        }
-                    } : null;
             try {
                 // Create an ephemeral node that contains our nodeInfo
                 BytesStreamOutput streamOutput = new BytesStreamOutput();
@@ -239,11 +232,6 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
             } catch (KeeperException.NodeExistsException e1) {
                 // Ignore
             }
-            zooKeeperCall("Registering node " + id, new Callable<Stat>() {
-                @Override public Stat call() throws Exception {
-                    return zooKeeper.exists(nodePath, watcher);
-                }
-            });
         } catch (KeeperException e) {
             throw new ZooKeeperClientException("Cannot register node " + id, e);
         } catch (IOException e) {

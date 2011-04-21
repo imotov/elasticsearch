@@ -49,11 +49,10 @@ public interface ZooKeeperClient extends LifecycleComponent<ZooKeeperClient> {
     /**
      * Registers the node in the list of live nodes
      * @param nodeInfo node to register
-     * @param listener triggered if node is deleted
      * @throws ElasticSearchException
      * @throws InterruptedException
      */
-    public void registerNode(DiscoveryNode nodeInfo, NodeDeletedListener listener) throws ElasticSearchException, InterruptedException;
+    public void registerNode(DiscoveryNode nodeInfo) throws ElasticSearchException, InterruptedException;
 
     /**
      * Unregister the node

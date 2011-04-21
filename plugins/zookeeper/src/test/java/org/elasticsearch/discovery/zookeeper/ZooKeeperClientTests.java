@@ -75,7 +75,7 @@ public class ZooKeeperClientTests extends AbstractZooKeeperTests {
         assertThat(latch.await(10, TimeUnit.SECONDS), equalTo(true));
 
         assertThat(zk2.electMaster("id2", null), equalTo("id2"));
-        assertThat(callbackForSelf[0], equalTo(true));
+        assertThat(callbackForSelf[0], equalTo(false));
 
     }
 
@@ -120,31 +120,20 @@ public class ZooKeeperClientTests extends AbstractZooKeeperTests {
         logger.error("New Master is " + masters[0]);
     }
 
-    @Test public void testDontElect() throws Exception {
-    }
-
     @Test public void testRegisterNode() throws Exception {
         ZooKeeperClient zk1 = buildZooKeeper();
 
-        final CountDownLatch latch = new CountDownLatch(1);
-
-        zk1.registerNode(buildDiscoveryNode("node1"), new ZooKeeperClient.NodeDeletedListener() {
-            @Override public void onNodeDeleted(String id) {
-                assertThat(id, equalTo("node1"));
-                latch.countDown();
-            }
-        });
-
+        zk1.registerNode(buildDiscoveryNode("node1"));
+        assertThat(zk1.listNodes(null).contains("node1"), equalTo(true));
         zk1.unregisterNode("node1");
-
-        assertThat(latch.await(1, TimeUnit.SECONDS), equalTo(true));
+        assertThat(zk1.listNodes(null).contains("node1"), equalTo(false));
 
     }
 
     @Test public void testNodeInfo() throws Exception {
         ZooKeeperClient zk1 = buildZooKeeper();
 
-        zk1.registerNode(buildDiscoveryNode("node1"), null);
+        zk1.registerNode(buildDiscoveryNode("node1"));
 
         assertThat(zk1.nodeInfo("node1").id(), equalTo("node1"));
         assertThat(zk1.nodeInfo("node2"), nullValue());
@@ -192,9 +181,9 @@ public class ZooKeeperClientTests extends AbstractZooKeeperTests {
         CountDownLatch latch = new CountDownLatch(4);
         RelistListener listener = new RelistListener(zk1, lists, latch);
         assertThat(zk1.listNodes(listener).size(), equalTo(0));
-        zk1.registerNode(buildDiscoveryNode("id1"), null);
-        zk1.registerNode(buildDiscoveryNode("id2"), null);
-        zk1.registerNode(buildDiscoveryNode("id3"), null);
+        zk1.registerNode(buildDiscoveryNode("id1"));
+        zk1.registerNode(buildDiscoveryNode("id2"));
+        zk1.registerNode(buildDiscoveryNode("id3"));
         zk1.unregisterNode("id2");
 
         assertThat(latch.await(1, TimeUnit.SECONDS), equalTo(true));

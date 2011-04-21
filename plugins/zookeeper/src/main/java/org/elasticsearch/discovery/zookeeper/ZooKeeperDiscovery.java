@@ -91,8 +91,6 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
 
     private final MasterAppearedListener initialMasterAppearedListener = new MasterAppearedListener(true);
 
-    private final NodeUnregisteredListener nodeUnregisteredListener = new NodeUnregisteredListener();
-
     private final MasterNodeListChangedListener masterNodeListChangedListener = new MasterNodeListChangedListener();
 
 
@@ -217,7 +215,7 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
             return false;
         }
         try {
-            zooKeeperClient.registerNode(localNode, nodeUnregisteredListener);
+            zooKeeperClient.registerNode(localNode);
             return true;
         } catch (Exception ex) {
             restartDiscovery();
@@ -504,18 +502,6 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
         asyncJoinCluster(false);
     }
 
-    private void handleSelfGone(String id) {
-        if (!lifecycle.started()) {
-            return;
-        }
-        logger.warn("Node registration disappeared {} ", id);
-        try {
-            register();
-        } catch (InterruptedException ex) {
-            // Ignore
-        }
-    }
-
     private void handleMasterAppeared(boolean initial) {
         if (!lifecycle.started()) {
             return;
@@ -543,12 +529,6 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
         }
     }
 
-
-    private class NodeUnregisteredListener implements ZooKeeperClient.NodeDeletedListener {
-        @Override public void onNodeDeleted(String id) {
-            handleSelfGone(id);
-        }
-    }
 
     private class MasterNodeListChangedListener implements ZooKeeperClient.NodeListChangedListener {
 
