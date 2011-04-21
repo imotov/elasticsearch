@@ -103,7 +103,7 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
 
     @Override public String electMaster(final String id, final NodeDeletedListener masterDeletedListener) throws ElasticSearchException, InterruptedException {
         if (!lifecycle.started()) {
-            throw new ZooKeeperClientException("electMaster is called after was service stopped");
+            throw new ZooKeeperClientException("electMaster is called after service was stopped");
         }
         if (id == null) {
             throw new ZooKeeperClientException("electMaster is called with null id");
@@ -120,11 +120,13 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
 
         while (true) {
             try {
+                // First, we try to obtain existing master node
                 byte[] leader = zooKeeperCall("Getting master data", new Callable<byte[]>() {
                     @Override public byte[] call() throws Exception {
                         return zooKeeper.getData(environment.masterNodePath(), watcher, null);
                     }
                 });
+                // Found master node - returning
                 if (leader != null) {
                     return new String(leader);
                 } else {
@@ -132,6 +134,8 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
                 }
             } catch (KeeperException.NoNodeException e) {
                 try {
+                    // If master node doesn't exist - we try to create the node
+                    // On the next iteration of the loop we will re-read this node to set watcher
                     zooKeeperCall("Cannot create leader node", new Callable<Object>() {
                         @Override public Object call() throws Exception {
                             zooKeeper.create(environment.masterNodePath(), id.getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
@@ -139,7 +143,7 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
                         }
                     });
                 } catch (KeeperException.NodeExistsException e1) {
-                    // Ignore - somebody already created this node since the last time we checked
+                    // If node is already created - we will try to read created node on the next iteration of the loop
                 } catch (KeeperException e1) {
                     throw new ZooKeeperClientException("Cannot create leader node", e1);
                 }
@@ -151,9 +155,10 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
 
     @Override public String findMaster(final NodeCreatedListener masterCreatedListener, final NodeDeletedListener masterDeletedListener) throws ElasticSearchException, InterruptedException {
         if (!lifecycle.started()) {
-            throw new ZooKeeperClientException("findMaster is called after was service stopped");
+            throw new ZooKeeperClientException("findMaster is called after service was stopped");
         }
 
+        // If master node doesn't exist, we will use createdWatcher to wait for its appearance
         final Watcher createdWatcher = (masterCreatedListener != null) ?
                 new Watcher() {
                     @Override public void process(WatchedEvent event) {
@@ -162,7 +167,7 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
                         }
                     }
                 } : null;
-
+        // If master node exists, we will use deletedWatcher to monitor its disappearance
         final Watcher deletedWatcher = (masterDeletedListener != null) ?
                 new Watcher() {
                     @Override public void process(WatchedEvent event) {
@@ -171,14 +176,17 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
                         }
                     }
                 } : null;
+
         while (true) {
             try {
+                // First we check if master node exists and set createdWatcher
                 Stat stat = zooKeeperCall("Checking if master exists", new Callable<Stat>() {
                     @Override public Stat call() throws Exception {
                         return zooKeeper.exists(environment.masterNodePath(), createdWatcher);
                     }
                 });
 
+                // If master node exists, returning the current master
                 if (stat != null) {
                     byte[] leader = zooKeeperCall("Getting master data", new Callable<byte[]>() {
                         @Override public byte[] call() throws Exception {
@@ -218,6 +226,7 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
                         }
                     } : null;
             try {
+                // Create an ephemeral node that contains our nodeInfo
                 BytesStreamOutput streamOutput = new BytesStreamOutput();
                 nodeInfo.writeTo(streamOutput);
                 final byte[] buf = streamOutput.copiedByteArray();
@@ -244,7 +253,7 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
 
     @Override public DiscoveryNode nodeInfo(final String id) throws ElasticSearchException, InterruptedException {
         if (!lifecycle.started()) {
-            throw new ZooKeeperClientException("nodeInfo is called after was service stopped");
+            throw new ZooKeeperClientException("nodeInfo is called after service was stopped");
         }
         try {
             byte[] buf = zooKeeperCall("Node Info for node " + id, new Callable<byte[]>() {
@@ -278,7 +287,7 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
 
     @Override public void unregisterNode(final String id) throws ElasticSearchException, InterruptedException {
         if (!lifecycle.started()) {
-            throw new ZooKeeperClientException("unregisterNode is called after was service stopped");
+            throw new ZooKeeperClientException("unregisterNode is called after service was stopped");
         }
         try {
             final String nodePath = nodePath(id);
@@ -295,7 +304,7 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
 
     @Override public Set<String> listNodes(final NodeListChangedListener listener) throws ElasticSearchException, InterruptedException {
         if (!lifecycle.started()) {
-            throw new ZooKeeperClientException("listNodes is called after was service stopped");
+            throw new ZooKeeperClientException("listNodes is called after service was stopped");
         }
         Set<String> res = new HashSet<String>();
         final Watcher watcher = (listener != null) ?
@@ -328,7 +337,7 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
 
     @Override public long sessionId() {
         if (!lifecycle.started()) {
-            throw new ZooKeeperClientException("sessionId is called after was service stopped");
+            throw new ZooKeeperClientException("sessionId is called after service was stopped");
         }
         return zooKeeper.getSessionId();
     }
@@ -443,6 +452,8 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
         }
     }
 
+    // TODO: this logic should be moved to the actual classes that represent parts of Cluster State after zookeeper-
+    // based discovery is merged to master.
     private void initClusterStatePersistence() {
         parts.add(new ClusterStatePart<RoutingTable>("routingTable") {
             @Override public void writeTo(RoutingTable statePart, StreamOutput out) throws IOException {
