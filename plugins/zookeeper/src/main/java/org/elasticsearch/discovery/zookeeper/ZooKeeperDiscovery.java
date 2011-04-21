@@ -349,11 +349,11 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
     private void restartDiscovery() {
         discoveryRestartLock.lock();
         try {
-            // We are no longer a master
-            master = false;
             if (lifecycle.started()) {
                 if (!zooKeeperClient.connected()) {
                     logger.info("Restarting ZooKeeper discovery");
+                    // We are no longer a master
+                    master = false;
                     try {
                         logger.trace("Stopping ZooKeeper");
                         zooKeeperClient.stop();
