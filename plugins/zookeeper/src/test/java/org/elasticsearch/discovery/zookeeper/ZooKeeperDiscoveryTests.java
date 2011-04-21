@@ -63,30 +63,13 @@ import static org.hamcrest.Matchers.*;
 /**
  * @author imotov
  */
-public class ZooKeeperDiscoveryTests {
-
-    protected final ESLogger logger = Loggers.getLogger(getClass());
-
-    protected EmbeddedZooKeeperService embeddedZooKeeperService;
+public class ZooKeeperDiscoveryTests extends AbstractZooKeeperTests{
 
     protected Random rand = new Random();
-
-    // can be removed if we add dependency for test-integration
-    // start of the code borrowed from AbstractNodesTests
 
     private Map<String, Node> nodes = newHashMap();
 
     private Map<String, Client> clients = newHashMap();
-
-    private Settings defaultSettings = ImmutableSettings.Builder.EMPTY_SETTINGS;
-
-    public void putDefaultSettings(Settings.Builder settings) {
-        putDefaultSettings(settings.build());
-    }
-
-    public void putDefaultSettings(Settings settings) {
-        defaultSettings = ImmutableSettings.settingsBuilder().put(defaultSettings).put(settings).build();
-    }
 
     public Node buildNode(String id) {
         return buildNode(id, EMPTY_SETTINGS);
@@ -100,7 +83,7 @@ public class ZooKeeperDiscoveryTests {
         String settingsSource = getClass().getName().replace('.', '/') + ".yml";
         Settings finalSettings = settingsBuilder()
                 .loadFromClasspath(settingsSource)
-                .put(defaultSettings)
+                .put(defaultSettings())
                 .put(settings)
                 .put("name", id)
                 .build();
@@ -137,30 +120,17 @@ public class ZooKeeperDiscoveryTests {
         nodes.clear();
     }
 
-    // end of the code borrowed from AbstractNodesTests
-
-
-    @BeforeClass public void startZooKeeper() {
-        Settings settings = ImmutableSettings.Builder.EMPTY_SETTINGS;
-        Environment tempEnvironment = new Environment(settings);
-        embeddedZooKeeperService = new EmbeddedZooKeeperService(settings, tempEnvironment);
-        embeddedZooKeeperService.start();
+    @BeforeClass public void addDefaultSettings() {
         putDefaultSettings(ImmutableSettings.settingsBuilder()
-                .put("zookeeper.host", "localhost:" + embeddedZooKeeperService.port())
+                .put(defaultSettings())
                 .put("discovery.zookeeper.state_publishing.enabled", true)
                 .put("discovery.type", "zoo_keeper")
-                .put("transport.type", "local")
-        );
+                .put("transport.type", "local"));
 
     }
 
     @AfterMethod public void nodesCleanup() {
         closeAllNodes();
-    }
-
-    @AfterClass public void stopZooKeeper() {
-        embeddedZooKeeperService.stop();
-        embeddedZooKeeperService.close();
     }
 
     @Test public void testSingleNodeStartup() throws Exception {
