@@ -59,6 +59,8 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
 
     private static final int MAX_NODE_SIZE = 1024 * 1024;
 
+    private final int maxNodeSize;
+
     private DiscoveryNode localNode;
 
     private final List<ClusterStatePart<?>> parts = new ArrayList<ClusterStatePart<?>>();
@@ -69,6 +71,7 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
         super(settings);
         this.environment = environment;
         this.zooKeeperFactory = zooKeeperFactory;
+        maxNodeSize = settings.getAsInt("zookeeper.maxnodesize", MAX_NODE_SIZE);
         initClusterStatePersistence();
     }
 
@@ -626,9 +629,9 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
                 int chunkNum = 0;
                 // Store state part in chunks in case it's too big for a single node
                 // It should be able to fit into a single node in most cases
-                for (int i = 0; i < size; i += MAX_NODE_SIZE) {
+                for (int i = 0; i < size; i += maxNodeSize) {
                     final String chunkPath = rootPath + "/" + chunkNum;
-                    final byte[] chunk = Arrays.copyOfRange(streamOutput.unsafeByteArray(), i, Math.min(size, i + MAX_NODE_SIZE));
+                    final byte[] chunk = Arrays.copyOfRange(streamOutput.unsafeByteArray(), i, Math.min(size, i + maxNodeSize));
                     zooKeeperCall("Cannot " + statePartName + " node", new Callable<String>() {
                         @Override public String call() throws Exception {
                             return zooKeeper.create(chunkPath, chunk, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
@@ -686,7 +689,7 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
                 int chunkNum = 0;
 
                 BytesStreamOutput buf = new BytesStreamOutput(size);
-                for (int i = 0; i < size; i += MAX_NODE_SIZE) {
+                for (int i = 0; i < size; i += maxNodeSize) {
                     final String chunkPath = path + "/" + chunkNum;
                     byte[] chunk = zooKeeperCall("Cannot read " + statePartName + " node", new Callable<byte[]>() {
                         @Override public byte[] call() throws Exception {

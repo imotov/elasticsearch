@@ -26,6 +26,7 @@ import org.elasticsearch.cluster.node.DiscoveryNodes;
 import org.elasticsearch.cluster.routing.IndexRoutingTable;
 import org.elasticsearch.cluster.routing.RoutingTable;
 import org.elasticsearch.cluster.routing.ShardRoutingState;
+import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.transport.LocalTransportAddress;
 import org.elasticsearch.discovery.zookeeper.client.ZooKeeperClient;
 import org.testng.annotations.Test;
@@ -253,11 +254,17 @@ public class ZooKeeperClientTests extends AbstractZooKeeperTests {
     }
 
     @Test public void testClusterStatePublishing() throws Exception {
-        IndexRoutingTable indexRoutingTable = new IndexRoutingTable.Builder("index")
-                .addShard(123, "nodeid", true, ShardRoutingState.STARTED, true)
-                .build();
-        RoutingTable routingTable = RoutingTable.newRoutingTableBuilder()
-                .add(indexRoutingTable)
+
+        RoutingTable.Builder routingTableBuilder = RoutingTable.newRoutingTableBuilder();
+        for(int i=0; i<1000; i++) {
+            IndexRoutingTable.Builder indexRoutingTableBuilder = new IndexRoutingTable.Builder("index");
+            for(int j=0; j<100; j++) {
+                indexRoutingTableBuilder.addShard(j, "i" + i + "s" + j, true, ShardRoutingState.STARTED, true);
+            }
+            routingTableBuilder.add(indexRoutingTableBuilder);
+        }
+
+        RoutingTable routingTable = routingTableBuilder
                 .build();
 
         DiscoveryNodes nodes = DiscoveryNodes.newNodesBuilder()
@@ -270,7 +277,9 @@ public class ZooKeeperClientTests extends AbstractZooKeeperTests {
                 .nodes(nodes)
                 .build();
 
-        ZooKeeperClient zk1 = buildZooKeeper();
+        ZooKeeperClient zk1 = buildZooKeeper(ImmutableSettings.settingsBuilder()
+                .put("zookeeper.maxnodesize", 10)
+                .build());
         zk1.publishClusterState(initialState);
 
         ClusterState retrievedState = zk1.retrieveClusterState(null);
