@@ -27,8 +27,6 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.index.CloseableIndexComponent;
 
 import java.util.Collection;
-import java.util.Collections;
-import java.util.Map;
 
 /**
  * A base class for a plugin.

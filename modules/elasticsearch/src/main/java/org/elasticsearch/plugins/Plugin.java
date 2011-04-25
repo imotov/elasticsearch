@@ -25,7 +25,6 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.index.CloseableIndexComponent;
 
 import java.util.Collection;
-import java.util.Map;
 
 /**
  * An extension point allowing to plug in custom functionality.
