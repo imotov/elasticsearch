@@ -17,20 +17,18 @@
  * under the License.
  */
 
-package org.elasticsearch.discovery.zookeeper.client;
-
-import org.elasticsearch.ElasticSearchException;
+package org.elasticsearch.zookeeper;
 
 /**
  * @author imotov
  */
-public class ZooKeeperClientException extends ElasticSearchException {
-
-    public ZooKeeperClientException(String msg) {
-        super(msg);
+public class AbstractNodeListener implements ZooKeeperClient.NodeListener {
+    @Override public void onNodeCreated(String id) {
     }
 
-    public ZooKeeperClientException(String msg, Throwable cause) {
-        super(msg, cause);
+    @Override public void onNodeDeleted(String id) {
+    }
+
+    @Override public void onNodeDataChanged(String id) {
     }
 }
