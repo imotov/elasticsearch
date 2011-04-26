@@ -33,10 +33,7 @@ import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.discovery.zen.DiscoveryNodesProvider;
-import org.elasticsearch.zookeeper.AbstractNodeListener;
-import org.elasticsearch.zookeeper.ZooKeeperClient;
-import org.elasticsearch.zookeeper.ZooKeeperClientException;
-import org.elasticsearch.zookeeper.ZooKeeperEnvironment;
+import org.elasticsearch.zookeeper.*;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -45,6 +42,12 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
+ * Publishes and retrieves cluster state using zookeeper.
+ *
+ * By default cluster state is stored in /es/elasticsearch/state node. State is published in several parts.
+ * Each part is updated only if it got changed and then /es/elasticsearch/state/state node is updated to
+ * reflect the latest versions of the parts.
+ *
  * @author imotov
  */
 public class ZooKeeperClusterState extends AbstractLifecycleComponent<ZooKeeperClusterState> {
@@ -70,7 +73,7 @@ public class ZooKeeperClusterState extends AbstractLifecycleComponent<ZooKeeperC
 
 
     /**
-     * Publish new cluster state
+     * Publishes new cluster state
      *
      * @param state
      * @throws org.elasticsearch.ElasticSearchException
@@ -89,7 +92,7 @@ public class ZooKeeperClusterState extends AbstractLifecycleComponent<ZooKeeperC
             }
             zooKeeperClient.setOrCreatePersistentNode(statePath, buf.copiedByteArray());
 
-            // Cleaning cached version of cluster parts
+            // Cleaning previous versions of updated cluster parts
             for (ClusterStatePart<?> part : this.parts) {
                 part.purge();
             }
@@ -99,17 +102,6 @@ public class ZooKeeperClusterState extends AbstractLifecycleComponent<ZooKeeperC
             publishingLock.unlock();
         }
 
-    }
-
-    private void updateClusterState(NewClusterStateListener newClusterStateListener) {
-        try {
-            ClusterState clusterState = retrieve(newClusterStateListener);
-            if (clusterState != null) {
-                newClusterStateListener.onNewClusterState(clusterState);
-            }
-        } catch (Exception ex) {
-            logger.error("Error updating cluster state {}", ex, lifecycleState());
-        }
     }
 
     /**
@@ -166,9 +158,28 @@ public class ZooKeeperClusterState extends AbstractLifecycleComponent<ZooKeeperC
 
     }
 
+    /**
+     * Makes sure that internal cache structures are in sync with zookeeper
+     *
+     * This method should be called when node becomes master and switches from retrieving cluster state
+     * to publishing cluster state.
+     */
     public void syncClusterState() throws ElasticSearchException, InterruptedException {
         // To prepare for publishing master state, make sure that we are in sync with zooKeeper
         retrieve(null);
+    }
+
+    private void updateClusterState(NewClusterStateListener newClusterStateListener) {
+        try {
+            ClusterState clusterState = retrieve(newClusterStateListener);
+            if (clusterState != null) {
+                newClusterStateListener.onNewClusterState(clusterState);
+            }
+        } catch (ZooKeeperClientSessionExpiredException ex) {
+            // Ignore session should be restarted
+        } catch (Exception ex) {
+            logger.error("Error updating cluster state", ex);
+        }
     }
 
     @Override protected void doStart() throws ElasticSearchException {
