@@ -120,7 +120,8 @@ public class ZooKeeperDiscoveryTests extends AbstractZooKeeperTests{
                 .put(defaultSettings())
                 .put("discovery.zookeeper.state_publishing.enabled", true)
                 .put("discovery.type", "zoo_keeper")
-                .put("transport.type", "local"));
+                .put("transport.type", "local")
+        );
 
     }
 
@@ -339,8 +340,10 @@ public class ZooKeeperDiscoveryTests extends AbstractZooKeeperTests{
 
     // TODO: need a faster test
     @Test(enabled = false) public void testIndexingWithNodeFailures() throws Exception {
+
         final int nodeCount = 5;
-        final long recordCount = 100;
+        final long recordCount = 500;
+        final int indexCount = 5;
         final AtomicBoolean done = new AtomicBoolean();
 
         for (int i = 0; i < nodeCount; i++) {
@@ -349,7 +352,7 @@ public class ZooKeeperDiscoveryTests extends AbstractZooKeeperTests{
 
         buildNode("client", ImmutableSettings.settingsBuilder()
                 .put("node.client", true)
-                .put("discovery.initial_state_timeout", 100, TimeUnit.MILLISECONDS)
+                .put("discovery.initial_state_timeout", 1000, TimeUnit.MILLISECONDS)
         ).start();
 
 
@@ -366,14 +369,14 @@ public class ZooKeeperDiscoveryTests extends AbstractZooKeeperTests{
                 }
             }
         };
-        failureThreads.start();
+
 
         for (int i = 0; i < recordCount; i++) {
             boolean retry = true;
             while (retry) {
                 retry = false;
                 try {
-                    client("client").prepareIndex("test", "test", Integer.toString(i))
+                    client("client").prepareIndex("test" + (i % indexCount), "test", Integer.toString(i))
                             .setSource(jsonBuilder()
                                     .startObject()
                                     .field("user", "kimchy")
@@ -388,6 +391,10 @@ public class ZooKeeperDiscoveryTests extends AbstractZooKeeperTests{
                     if (i % 10 == 0) {
                         logHealth("client");
                     }
+                    if(i==indexCount) {
+                        // Start failure after all indices are created
+                        failureThreads.start();
+                    }
                 } catch (ClusterBlockException ex) {
                     retry = true;
                 }
@@ -398,7 +405,18 @@ public class ZooKeeperDiscoveryTests extends AbstractZooKeeperTests{
         failureThreads.interrupt();
         failureThreads.join();
 
-        assertThat(count("client"), equalTo(recordCount));
+        assertThat(countResults(indexCount), equalTo(recordCount));
+    }
+
+    private long countResults(int indexCount) throws InterruptedException {
+        long sum = 0;
+        for(int i=0; i<indexCount; i++) {
+            long count = count("client", "test" + i);
+            logger.info("Found {} in the index {}", count, i);
+            sum += count;
+
+        }
+        return sum;
     }
 
 
@@ -437,8 +455,9 @@ public class ZooKeeperDiscoveryTests extends AbstractZooKeeperTests{
 
     }
 
-    private long count(String id) throws InterruptedException {
-        CountResponse countResponse = client(id).prepareCount("test")
+    private long count(String id, String index) throws InterruptedException {
+
+        CountResponse countResponse = client(id).prepareCount(index)
                 .setQuery(QueryBuilders.matchAllQuery())
                 .execute()
                 .actionGet();
@@ -470,6 +489,7 @@ public class ZooKeeperDiscoveryTests extends AbstractZooKeeperTests{
         int nodeToRestart = rand.nextInt(nodeCount);
         logger.info("Restarting node [{}]", nodeToRestart);
         node("node" + nodeToRestart).stop();
+        Thread.sleep(200);
         node("node" + nodeToRestart).start();
     }
 
