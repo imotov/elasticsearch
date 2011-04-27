@@ -52,7 +52,6 @@ public final class ZooKeeperSettingsLoader {
         ZooKeeperEnvironment zooKeeperEnvironment = new ZooKeeperEnvironment(settings, clusterName);
 
         ZooKeeper zooKeeper = zooKeeperFactory.newZooKeeper();
-        Map<String, String> map = new HashMap<String, String>();
         try {
             return ImmutableSettings.settingsBuilder()
                     .put(loadSettings(zooKeeper, zooKeeperEnvironment.globalSettingsNodePath()))

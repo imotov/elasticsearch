@@ -54,9 +54,9 @@ public class ZooKeeperClusterState extends AbstractLifecycleComponent<ZooKeeperC
 
     private final Lock publishingLock = new ReentrantLock();
 
-    private ZooKeeperClient zooKeeperClient;
+    private final ZooKeeperClient zooKeeperClient;
 
-    private ZooKeeperEnvironment environment;
+    private final ZooKeeperEnvironment environment;
 
     private final List<ClusterStatePart<?>> parts = new ArrayList<ClusterStatePart<?>>();
 
@@ -292,7 +292,7 @@ public class ZooKeeperClusterState extends AbstractLifecycleComponent<ZooKeeperC
     }
 
     private abstract class ClusterStatePart<T> {
-        private String statePartName;
+        private final String statePartName;
 
         private T cached;
 
@@ -335,9 +335,14 @@ public class ZooKeeperClusterState extends AbstractLifecycleComponent<ZooKeeperC
             if (path.equals(cachedPath)) {
                 return cached;
             } else {
-                cached = internalGetStatePart(path);
-                cachedPath = path;
-                return cached;
+                T part = internalGetStatePart(path);
+                if(part!=null) {
+                    cached = part;
+                    cachedPath = path;
+                    return cached;
+                } else {
+                    return null;
+                }
             }
 
         }
@@ -353,7 +358,11 @@ public class ZooKeeperClusterState extends AbstractLifecycleComponent<ZooKeeperC
             try {
 
                 byte[] buf = zooKeeperClient.getLargeNode(path);
-                return readFrom(new BytesStreamInput(buf));
+                if(buf != null) {
+                    return readFrom(new BytesStreamInput(buf));
+                } else {
+                    return null;
+                }
             } catch (IOException e) {
                 throw new ZooKeeperClientException("Cannot read " + statePartName + " node at " + path, e);
             }

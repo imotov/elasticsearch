@@ -73,13 +73,13 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
 
     private final CopyOnWriteArrayList<InitialStateDiscoveryListener> initialStateListeners = new CopyOnWriteArrayList<InitialStateDiscoveryListener>();
 
-    private ZooKeeperClient zooKeeperClient;
+    private final ZooKeeperClient zooKeeperClient;
 
     private DiscoveryNode localNode;
 
     private String localNodePath;
 
-    private StatePublisher statePublisher;
+    private final StatePublisher statePublisher;
 
     private volatile boolean master = false;
 
@@ -228,7 +228,7 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
         }
     }
 
-    private boolean register() throws InterruptedException {
+    private boolean register() {
         if (lifecycle.stoppedOrClosed()) {
             return false;
         }
@@ -269,7 +269,7 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
         }
     }
 
-    private void electMaster(boolean initial) throws InterruptedException {
+    private void electMaster(boolean initial) {
         if (lifecycle.stoppedOrClosed()) {
             return;
         }
@@ -343,9 +343,9 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
                 if (initial) {
                     builder.put(localNode);
                 } else {
-                    builder.putAll(currentState.nodes())
-                            // remove the previous master
-                            .remove(currentState.nodes().masterNodeId());
+                    builder.putAll(currentState.nodes());
+                    // we are not removing previous master here.
+                    // it will be removed in handleUpdateNodeList() call below
                 }
                 // update the fact that we are the master...
                 builder.localNodeId(localNode.id()).masterNodeId(localNode.id());
@@ -422,9 +422,7 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
         if (!lifecycle.started()) {
             return;
         }
-        if (master) {
-            logger.warn("master should not receive new cluster state from [{}]", clusterState.nodes().masterNode());
-        } else {
+        if (!master) {
             // Make sure that we are part of the state
             if (clusterState.nodes().localNode() != null) {
                 clusterService.submitStateUpdateTask("zoo-keeper-disco-receive(from master [" + clusterState.nodes().masterNode() + "])", new ProcessedClusterStateUpdateTask() {
@@ -555,7 +553,7 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
     }
 
     private class ZooKeeperStatePublisher implements StatePublisher {
-        private ZooKeeperClusterState zooKeeperClusterState;
+        private final ZooKeeperClusterState zooKeeperClusterState;
 
         public ZooKeeperStatePublisher(Settings settings, ZooKeeperEnvironment environment, ZooKeeperClient zooKeeperClient, DiscoveryNodesProvider nodesProvider) {
             zooKeeperClusterState = new ZooKeeperClusterState(settings, environment, zooKeeperClient, nodesProvider);
@@ -594,7 +592,7 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
     }
 
     private class ZenStatePublisher implements StatePublisher {
-        private PublishClusterStateAction publishClusterState;
+        private final PublishClusterStateAction publishClusterState;
 
         public ZenStatePublisher(Settings settings, TransportService transportService, DiscoveryNodesProvider nodesProvider,
                                      NewClusterStateListener listener) {
