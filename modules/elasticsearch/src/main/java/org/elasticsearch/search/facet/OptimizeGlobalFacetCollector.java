@@ -17,28 +17,13 @@
  * under the License.
  */
 
-package org.elasticsearch.index.query;
+package org.elasticsearch.search.facet;
 
-import org.elasticsearch.ElasticSearchException;
-import org.elasticsearch.common.xcontent.XContentParser;
-import org.elasticsearch.index.IndexComponent;
+import org.elasticsearch.search.internal.SearchContext;
 
-/**
- * @author kimchy (Shay Banon)
- */
-public interface IndexQueryParser extends IndexComponent {
+import java.io.IOException;
 
-    String name();
+public interface OptimizeGlobalFacetCollector {
 
-    void close();
-
-    ParsedQuery parse(byte[] source) throws ElasticSearchException;
-
-    ParsedQuery parse(byte[] source, int offset, int length) throws ElasticSearchException;
-
-    ParsedQuery parse(String source) throws ElasticSearchException;
-
-    ParsedQuery parse(QueryBuilder queryBuilder) throws ElasticSearchException;
-
-    ParsedQuery parse(XContentParser parser) throws ElasticSearchException;
+    void optimizedGlobalExecution(SearchContext searchContext) throws IOException;
 }

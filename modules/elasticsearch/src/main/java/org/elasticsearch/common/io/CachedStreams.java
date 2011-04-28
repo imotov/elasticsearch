@@ -17,28 +17,16 @@
  * under the License.
  */
 
-package org.elasticsearch.index.query;
+package org.elasticsearch.common.io;
 
-import org.elasticsearch.ElasticSearchException;
-import org.elasticsearch.common.xcontent.XContentParser;
-import org.elasticsearch.index.IndexComponent;
+import org.elasticsearch.common.io.stream.CachedStreamInput;
+import org.elasticsearch.common.io.stream.CachedStreamOutput;
 
-/**
- * @author kimchy (Shay Banon)
- */
-public interface IndexQueryParser extends IndexComponent {
+public class CachedStreams {
 
-    String name();
-
-    void close();
-
-    ParsedQuery parse(byte[] source) throws ElasticSearchException;
-
-    ParsedQuery parse(byte[] source, int offset, int length) throws ElasticSearchException;
-
-    ParsedQuery parse(String source) throws ElasticSearchException;
-
-    ParsedQuery parse(QueryBuilder queryBuilder) throws ElasticSearchException;
-
-    ParsedQuery parse(XContentParser parser) throws ElasticSearchException;
+    public static void clear() {
+        FastByteArrayOutputStream.Cached.clear();
+        CachedStreamInput.clear();
+        CachedStreamOutput.clear();
+    }
 }
