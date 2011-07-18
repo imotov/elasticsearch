@@ -22,10 +22,14 @@ package org.elasticsearch.zookeeper;
 import org.apache.zookeeper.*;
 import org.apache.zookeeper.data.Stat;
 import org.elasticsearch.ElasticSearchException;
+import org.elasticsearch.common.Bytes;
 import org.elasticsearch.common.component.AbstractLifecycleComponent;
 import org.elasticsearch.common.inject.Inject;
+import org.elasticsearch.common.io.stream.BytesStreamOutput;
 import org.elasticsearch.common.settings.Settings;
 
+import java.io.IOException;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -45,6 +49,10 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
 
     private final ZooKeeperFactory zooKeeperFactory;
 
+    private static final int MAX_NODE_SIZE = 1024 * 1024;
+
+    private final int maxNodeSize;
+
     private final Lock sessionRestartLock = new ReentrantLock();
 
     private final CopyOnWriteArrayList<SessionResetListener> sessionResetListeners = new CopyOnWriteArrayList<SessionResetListener>();
@@ -53,6 +61,7 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
         super(settings);
         this.environment = environment;
         this.zooKeeperFactory = zooKeeperFactory;
+        maxNodeSize = settings.getAsInt("zookeeper.maxnodesize", MAX_NODE_SIZE);
     }
 
     @Override protected void doStart() throws ElasticSearchException {
@@ -264,6 +273,99 @@ public class ZooKeeperClientService extends AbstractLifecycleComponent<ZooKeeper
             });
         } catch (KeeperException e) {
             throw new ZooKeeperClientException("Cannot delete node" + path, e);
+        }
+    }
+
+    @Override public String createLargeSequentialNode(final String pathPrefix, byte[] data) throws InterruptedException {
+        if (!lifecycle.started()) {
+            throw new ZooKeeperClientException("deleteNode is called after service was stopped");
+        }
+        String rootPath;
+        try {
+            final int size = data.length;
+            // Create Root node with version and size of the state part
+            rootPath = zooKeeperCall("Cannot create node at " + pathPrefix, new Callable<String>() {
+                @Override public String call() throws Exception {
+                    return zooKeeper.create(pathPrefix, Bytes.itoa(size), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
+                }
+            });
+            int chunkNum = 0;
+            // Store state part in chunks in case it's too big for a single node
+            // It should be able to fit into a single node in most cases
+            for (int i = 0; i < size; i += maxNodeSize) {
+                final String chunkPath = rootPath + "/" + chunkNum;
+                final byte[] chunk;
+                if (size < maxNodeSize) {
+                    chunk = Arrays.copyOfRange(data, i, Math.min(size, i + maxNodeSize));
+                } else {
+                    chunk = data;
+                }
+                zooKeeperCall("Cannot create node at " + chunkPath, new Callable<String>() {
+                    @Override public String call() throws Exception {
+                        return zooKeeper.create(chunkPath, chunk, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+                    }
+                });
+                chunkNum++;
+            }
+        } catch (KeeperException e) {
+            throw new ZooKeeperClientException("Cannot create node at " + pathPrefix, e);
+        }
+        return rootPath;
+    }
+
+    @Override public void deleteLargeNode(final String path) throws InterruptedException {
+        if (!lifecycle.started()) {
+            throw new ZooKeeperClientException("deleteNode is called after service was stopped");
+        }
+        try {
+            zooKeeperCall("Cannot delete node at " + path, new Callable<Object>() {
+                @Override public Object call() throws Exception {
+                    List<String> children = zooKeeper.getChildren(path, null);
+                    for (String child : children) {
+                        zooKeeper.delete(path + "/" + child, -1);
+                    }
+                    zooKeeper.delete(path, -1);
+                    return null;
+                }
+            });
+        } catch (KeeperException e) {
+            throw new ZooKeeperClientException("Cannot delete node at " + path, e);
+        }
+    }
+
+    @Override public byte[] getLargeNode(final String path) throws InterruptedException {
+        if (!lifecycle.started()) {
+            throw new ZooKeeperClientException("getLargeNode is called after service was stopped");
+        }
+        try {
+            byte[] sizeBuf = zooKeeperCall("Cannot read node at " + path, new Callable<byte[]>() {
+                @Override public byte[] call() throws Exception {
+                    return zooKeeper.getData(path, null, null);
+                }
+            });
+            final int size = Bytes.atoi(sizeBuf);
+            int chunkNum = 0;
+
+            BytesStreamOutput buf = new BytesStreamOutput(size);
+            for (int i = 0; i < size; i += maxNodeSize) {
+                final String chunkPath = path + "/" + chunkNum;
+                byte[] chunk = zooKeeperCall("Cannot read node", new Callable<byte[]>() {
+                    @Override public byte[] call() throws Exception {
+                        return zooKeeper.getData(chunkPath, null, null);
+                    }
+                });
+                buf.write(chunk);
+                chunkNum++;
+            }
+            return buf.copiedByteArray();
+        } catch (KeeperException.NoNodeException e) {
+            // This means that a new version of state is already posted and this version is
+            // getting deleted - exit
+            return null;
+        } catch (KeeperException e) {
+            throw new ZooKeeperClientException("Cannot read node at " + path, e);
+        } catch (IOException e) {
+            throw new ZooKeeperClientException("Cannot read node at " + path, e);
         }
     }
 

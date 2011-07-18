@@ -19,7 +19,6 @@
 
 package org.elasticsearch.zookeeper;
 
-import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.component.LifecycleComponent;
 
 import java.util.Set;
@@ -38,11 +37,19 @@ public interface ZooKeeperClient extends LifecycleComponent<ZooKeeperClient> {
     void setOrCreateTransientNode(String path, byte[] data) throws InterruptedException;
 
 
-    byte[] getNode(final String path, @Nullable final NodeListener nodeListener) throws InterruptedException;
+    byte[] getNode(final String path, final NodeListener nodeListener) throws InterruptedException;
 
     Set<String> listNodes(String path, NodeListChangedListener nodeListChangedListener) throws InterruptedException;
 
     void deleteNode(String path) throws InterruptedException;
+
+
+    String createLargeSequentialNode(String pathPrefix, byte[] data) throws InterruptedException;
+
+    void deleteLargeNode(String path) throws InterruptedException;
+
+    byte[] getLargeNode(final String path) throws InterruptedException;
+
 
     void addSessionResetListener(SessionResetListener sessionResetListener);
 

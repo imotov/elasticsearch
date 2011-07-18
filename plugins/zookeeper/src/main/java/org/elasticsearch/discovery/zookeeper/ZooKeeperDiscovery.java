@@ -79,7 +79,7 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
 
     private String localNodePath;
 
-    private final PublishClusterStateAction publishClusterState;
+    private final StatePublisher statePublisher;
 
     private volatile boolean master = false;
 
@@ -95,6 +95,7 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
 
     private final ZooKeeperEnvironment environment;
 
+
     @Inject public ZooKeeperDiscovery(Settings settings, ZooKeeperEnvironment environment, ClusterName clusterName, ThreadPool threadPool,
                                       TransportService transportService, ClusterService clusterService,
                                       ZooKeeperClient zooKeeperClient) {
@@ -105,7 +106,11 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
         this.zooKeeperClient = zooKeeperClient;
         this.threadPool = threadPool;
         this.environment = environment;
-        this.publishClusterState = new PublishClusterStateAction(settings, transportService, this, new NewClusterStateListener());
+        if (componentSettings.getAsBoolean("state_publishing.enabled", false)) {
+            statePublisher = new ZooKeeperStatePublisher(settings, environment, zooKeeperClient, this);
+        } else {
+            statePublisher = new ZenStatePublisher(settings, transportService, this, new NewClusterStateListener());
+        }
     }
 
     @Override protected void doStart() throws ElasticSearchException {
@@ -125,11 +130,15 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
             // Ignore
         }
 
+        statePublisher.start();
+
         // do the join on a different thread, the DiscoveryService waits for 30s anyhow till it is discovered
         asyncJoinCluster(true);
     }
 
     @Override protected void doStop() throws ElasticSearchException {
+        statePublisher.stop();
+
         zooKeeperClient.removeSessionResetListener(sessionResetListener);
         logger.trace("Stopping zooKeeper client");
         zooKeeperClient.stop();
@@ -174,7 +183,7 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
         }
         try {
             latestDiscoNodes = clusterState.nodes();
-            publishClusterState.publish(clusterState);
+            statePublisher.publish(clusterState);
         } catch (ZooKeeperClientSessionExpiredException ex) {
             // Ignore
         } catch (Exception ex) {
@@ -250,12 +259,13 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
             }
         };
 
-        if (zooKeeperClient.getNode(environment.masterNodePath(), nodeListener) == null) {
+        byte[] masterId = zooKeeperClient.getNode(environment.masterNodePath(), nodeListener);
+        if (masterId == null) {
             if (!initial) {
                 removeMaster();
             }
         } else {
-            addMaster();
+            addMaster(new String(masterId));
         }
     }
 
@@ -279,7 +289,7 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
             if (localNode.id().equals(electedMasterIdStr)) {
                 becomeMaster();
             } else {
-                addMaster();
+                addMaster(electedMasterIdStr);
             }
         } catch (Exception ex) {
             logger.error("Couldn't elect master. Restarting discovery.", ex);
@@ -287,8 +297,9 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
         }
     }
 
-    private void addMaster() {
+    private void addMaster(String masterNodeId) throws InterruptedException {
         master = false;
+        statePublisher.addMaster(masterNodeId);
     }
 
     private void removeMaster() {
@@ -325,6 +336,7 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
 
     private void becomeMaster() throws InterruptedException {
         this.master = true;
+        statePublisher.becomeMaster();
         clusterService.submitStateUpdateTask("zen-disco-join (elected_as_master)", new ProcessedClusterStateUpdateTask() {
             @Override public ClusterState execute(ClusterState currentState) {
                 DiscoveryNodes.Builder builder = new DiscoveryNodes.Builder();
@@ -518,11 +530,96 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
         }
     }
 
+    private class NewZooKeeperClusterStateListener implements ZooKeeperClusterState.NewClusterStateListener {
+
+        @Override public void onNewClusterState(ClusterState clusterState) {
+            handleNewClusterStateFromMaster(clusterState);
+        }
+    }
+
     private class SessionResetListener implements ZooKeeperClient.SessionResetListener {
 
         @Override public void sessionReset() {
             restartDiscovery();
         }
+    }
+
+    private interface StatePublisher {
+        void start();
+
+        void stop();
+
+        void publish(ClusterState clusterState);
+
+        void addMaster(String masterNodeId) throws InterruptedException;
+
+        void becomeMaster() throws InterruptedException;
+
+    }
+
+    private class ZooKeeperStatePublisher implements StatePublisher {
+        private final ZooKeeperClusterState zooKeeperClusterState;
+
+        public ZooKeeperStatePublisher(Settings settings, ZooKeeperEnvironment environment, ZooKeeperClient zooKeeperClient, DiscoveryNodesProvider nodesProvider) {
+            zooKeeperClusterState = new ZooKeeperClusterState(settings, environment, zooKeeperClient, nodesProvider);
+
+        }
+
+
+        @Override public void start() {
+            zooKeeperClusterState.start();
+        }
+
+        @Override public void stop() {
+            zooKeeperClusterState.stop();
+        }
+
+        @Override public void publish(ClusterState clusterState) {
+            try {
+                zooKeeperClusterState.publish(clusterState);
+            } catch (InterruptedException ex) {
+                // Ignore
+            }
+
+        }
+
+        @Override public void addMaster(String masterNodeId) throws InterruptedException {
+            ClusterState state = zooKeeperClusterState.retrieve(new NewZooKeeperClusterStateListener());
+            if (state != null && masterNodeId.equals(state.nodes().masterNodeId())) {
+                // Check that this state was published by elected master
+                handleNewClusterStateFromMaster(state);
+            }
+        }
+
+        @Override public void becomeMaster() throws InterruptedException {
+            zooKeeperClusterState.syncClusterState();
+        }
+    }
+
+    private class ZenStatePublisher implements StatePublisher {
+        private final PublishClusterStateAction publishClusterState;
+
+        public ZenStatePublisher(Settings settings, TransportService transportService, DiscoveryNodesProvider nodesProvider,
+                                 NewClusterStateListener listener) {
+            publishClusterState = new PublishClusterStateAction(settings, transportService, nodesProvider, listener);
+        }
+
+        @Override public void start() {
+        }
+
+        @Override public void stop() {
+        }
+
+        @Override public void publish(ClusterState clusterState) {
+            publishClusterState.publish(clusterState);
+        }
+
+        @Override public void addMaster(String masterNodeId) throws InterruptedException {
+        }
+
+        @Override public void becomeMaster() throws InterruptedException {
+        }
+
     }
 
 }

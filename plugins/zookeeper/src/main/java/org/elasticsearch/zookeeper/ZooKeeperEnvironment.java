@@ -35,6 +35,8 @@ public class ZooKeeperEnvironment {
 
     private final String nodesNodePath;
 
+    private final String stateNodePath;
+
     private final String globalSettingsNodePath;
 
     private final String clusterSettingsNodePath;
@@ -45,6 +47,7 @@ public class ZooKeeperEnvironment {
         rootNodePath = settings.get("zookeeper.root", "/es");
         clusterNodePath = rootNodePath + "/" + settings.get("zookeeper.cluster", clusterName.value());
         nodesNodePath = clusterNodePath + "/" + "nodes";
+        stateNodePath = clusterNodePath + "/" + "state";
         globalSettingsNodePath = rootNodePath + "/" + "settings";
         clusterSettingsNodePath = clusterNodePath + "/" + "settings";
         masterNodePath = clusterNodePath + "/" + "leader";
@@ -64,6 +67,10 @@ public class ZooKeeperEnvironment {
 
     public String masterNodePath() {
         return masterNodePath;
+    }
+
+    public String stateNodePath() {
+        return stateNodePath;
     }
 
     public String clusterSettingsNodePath() {
