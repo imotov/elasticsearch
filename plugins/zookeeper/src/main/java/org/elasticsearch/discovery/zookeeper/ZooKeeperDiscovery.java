@@ -300,7 +300,7 @@ public class ZooKeeperDiscovery extends AbstractLifecycleComponent<Discovery> im
                 // if this is a data node, clean the metadata and routing, since we want to recreate the indices and shards
                 if (currentState.nodes().localNode() != null && currentState.nodes().localNode().dataNode()) {
                     metaData = MetaData.newMetaDataBuilder().build();
-                    routingTable = RoutingTable.newRoutingTableBuilder().build();
+                    routingTable = RoutingTable.builder().build();
                 }
                 DiscoveryNodes.Builder builder = DiscoveryNodes.newNodesBuilder()
                         .putAll(currentState.nodes());
