@@ -84,6 +84,8 @@ import org.elasticsearch.threadpool.ThreadPool;
 import org.elasticsearch.threadpool.ThreadPoolModule;
 import org.elasticsearch.transport.TransportModule;
 import org.elasticsearch.transport.TransportService;
+import org.elasticsearch.watcher.ResourceWatcherModule;
+import org.elasticsearch.watcher.ResourceWatcherService;
 
 import java.util.concurrent.TimeUnit;
 
@@ -148,6 +150,7 @@ public final class InternalNode implements Node {
         modules.add(new MonitorModule(settings));
         modules.add(new GatewayModule(settings));
         modules.add(new NodeClientModule());
+        modules.add(new ResourceWatcherModule());
 
         injector = modules.createInjector();
 
@@ -198,6 +201,7 @@ public final class InternalNode implements Node {
             injector.getInstance(HttpServer.class).start();
         }
         injector.getInstance(JmxService.class).connectAndRegister(discoService.nodeDescription(), injector.getInstance(NetworkService.class));
+        injector.getInstance(ResourceWatcherService.class).start();
 
         logger.info("{{}}[{}]: started", Version.CURRENT, JvmInfo.jvmInfo().pid());
 
@@ -212,6 +216,7 @@ public final class InternalNode implements Node {
         ESLogger logger = Loggers.getLogger(Node.class, settings.get("name"));
         logger.info("{{}}[{}]: stopping ...", Version.CURRENT, JvmInfo.jvmInfo().pid());
 
+        injector.getInstance(ResourceWatcherService.class).stop();
         if (settings.getAsBoolean("http.enabled", true)) {
             injector.getInstance(HttpServer.class).stop();
         }
