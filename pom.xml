@@ -18,9 +18,9 @@
         </license>
     </licenses>
     <scm>
-        <connection>scm:git:git@github.com:elasticsearch/elasticsearch.git</connection>
-        <developerConnection>scm:git:git@github.com:elasticsearch/elasticsearch.git</developerConnection>
-        <url>http://github.com/elasticsearch/elasticsearch</url>
+        <connection>scm:git:git@github.com:sonian/elasticsearch.git</connection>
+        <developerConnection>scm:git:git@github.com:sonian/elasticsearch.git</developerConnection>
+        <url>http://github.com/sonian/elasticsearch</url>
     </scm>
 
     <parent>
@@ -561,6 +561,19 @@
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>com.github.github</groupId>
+                <artifactId>downloads-maven-plugin</artifactId>
+                <version>0.6</version>
+                <configuration>
+                    <description>${project.version} release of ${project.name}</description>
+                    <override>true</override>
+                    <includes>
+                        <include>releases/elasticsearch-${project.version}.zip</include>
+                    </includes>                    
+                    <server>github</server>
+               </configuration>
             </plugin>
         </plugins>
     </build>
