@@ -5,12 +5,15 @@
  */
 package org.elasticsearch.xpack.core.action;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.elasticsearch.action.ActionResponse;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.xpack.core.XPackFeatureSet;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -20,12 +23,20 @@ public class XPackUsageResponse extends ActionResponse {
 
     private final List<XPackFeatureSet.Usage> usages;
 
+    private static final Logger logger = LogManager.getLogger(XPackUsageResponse.class);
+
     public XPackUsageResponse(final List<XPackFeatureSet.Usage> usages) {
         this.usages = Objects.requireNonNull(usages);
     }
 
     public XPackUsageResponse(final StreamInput in) throws IOException {
-        usages = in.readNamedWriteableList(XPackFeatureSet.Usage.class);
+        int size = in.readVInt();
+        usages = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            String name = in.readString();
+            logger.error("Deserializing " + name);
+            usages.add(in.readNamedWriteable(XPackFeatureSet.Usage.class, name));
+        }
     }
 
     public List<XPackFeatureSet.Usage> getUsages() {
@@ -43,7 +54,10 @@ public class XPackUsageResponse extends ActionResponse {
     }
 
     private static void writeTo(final StreamOutput out, final List<XPackFeatureSet.Usage> usages) throws IOException {
-        out.writeNamedWriteableList(usages);
+        out.writeVInt(usages.size());
+        for (XPackFeatureSet.Usage usage : usages) {
+            logger.error("Serializing " + usage.name() + " " + usage.getClass() + " " + usage.getWriteableName());
+            out.writeNamedWriteable(usage);
+        }
     }
-
 }
