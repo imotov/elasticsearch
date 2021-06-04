@@ -8,6 +8,8 @@
 
 package org.elasticsearch.common.geo;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.elasticsearch.ElasticsearchParseException;
 import org.elasticsearch.common.xcontent.LoggingDeprecationHandler;
 import org.elasticsearch.common.xcontent.NamedXContentRegistry;
@@ -19,27 +21,39 @@ import org.elasticsearch.geometry.Point;
 import org.elasticsearch.geometry.utils.GeometryValidator;
 import org.elasticsearch.geometry.utils.StandardValidator;
 import org.elasticsearch.geometry.utils.WellKnownText;
+import org.elasticsearch.plugins.spi.GeometryFormatFactoryProvider;
 
 import java.io.IOException;
 import java.text.ParseException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * An utility class with a geometry parser methods supporting different shape representation formats
  */
 public final class GeometryParser {
 
+    private static final Logger logger = LogManager.getLogger(GeometryParser.class);
+
+    private static volatile Map<String, GeometryFormatFactory<Geometry>> factories;
+
+    static {
+        factories = Collections.emptyMap();
+        reloadFactories(GeometryParser.class.getClassLoader());
+    }
+
+
     private final GeoJson geoJsonParser;
     private final WellKnownText wellKnownTextParser;
+    private final boolean rightOrientation;
+    private final boolean coerce;
     private final boolean ignoreZValue;
 
     public GeometryParser(boolean rightOrientation, boolean coerce, boolean ignoreZValue) {
         GeometryValidator validator = new StandardValidator(ignoreZValue);
         geoJsonParser = new GeoJson(rightOrientation, coerce, validator);
         wellKnownTextParser = new WellKnownText(coerce, validator);
+        this.rightOrientation = rightOrientation;
+        this.coerce = coerce;
         this.ignoreZValue = ignoreZValue;
     }
 
@@ -59,6 +73,10 @@ public final class GeometryParser {
         } else if (format.equals(WKTGeometryFormat.NAME)) {
             return new WKTGeometryFormat(wellKnownTextParser);
         } else {
+            GeometryFormatFactory<Geometry> factory = factories.get(format);
+            if (factory != null) {
+                return factory.get(rightOrientation, coerce, ignoreZValue);
+            }
             throw new IllegalArgumentException("Unrecognized geometry format [" + format + "].");
         }
     }
@@ -76,6 +94,11 @@ public final class GeometryParser {
             // We don't know the format of the original geometry - so going with default
             return new GeoJsonGeometryFormat(geoJsonParser);
         } else {
+            for (GeometryFormatFactory<Geometry> factory : factories.values()) {
+                if (factory.acceptsAsAFirstToken(parser.currentToken())) {
+                    return factory.get(rightOrientation, coerce, ignoreZValue);
+                }
+            }
             throw new ElasticsearchParseException("shape must be an object consisting of type and coordinates");
         }
     }
@@ -132,5 +155,25 @@ public final class GeometryParser {
             return Character.isDigit(string.charAt(0)) || string.indexOf('(') == -1;
         }
         return false;
+    }
+
+    private static List<GeometryFormatFactory<Geometry>> getFactories(ClassLoader classLoader) {
+        List<GeometryFormatFactory<Geometry>> factories = new ArrayList<>();
+        ServiceLoader<GeometryFormatFactoryProvider> loader = ServiceLoader.load(GeometryFormatFactoryProvider.class, classLoader);
+        for (GeometryFormatFactoryProvider provider : loader) {
+            factories.addAll(provider.getGeometryFormatFactories());
+        }
+        return factories;
+    }
+
+    public synchronized static void reloadFactories(ClassLoader loader) {
+        Map<String, GeometryFormatFactory<Geometry>> factoriesByName = new HashMap<>(factories);
+        for (GeometryFormatFactory<Geometry> factory : getFactories(loader)) {
+            if (factoriesByName.containsKey(factory.name()) == false) {
+                logger.info("Registering geometry format factory for [{}]", factory.name());
+                factoriesByName.put(factory.name(), factory);
+            }
+        }
+        factories = Collections.unmodifiableMap(factoriesByName);
     }
 }

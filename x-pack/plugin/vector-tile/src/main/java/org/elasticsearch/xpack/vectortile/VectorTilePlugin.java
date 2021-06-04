@@ -15,6 +15,7 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.settings.SettingsFilter;
 import org.elasticsearch.license.XPackLicenseState;
 import org.elasticsearch.plugins.ActionPlugin;
+import org.elasticsearch.plugins.ExtensiblePlugin;
 import org.elasticsearch.plugins.Plugin;
 import org.elasticsearch.rest.RestController;
 import org.elasticsearch.rest.RestHandler;
@@ -27,7 +28,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.function.Supplier;
 
-public class VectorTilePlugin extends Plugin implements ActionPlugin {
+public class VectorTilePlugin extends Plugin implements ActionPlugin, ExtensiblePlugin {
+
+    public VectorTilePlugin(Settings settings) {
+    }
 
     // to be overriden by tests
     protected XPackLicenseState getLicenseState() {

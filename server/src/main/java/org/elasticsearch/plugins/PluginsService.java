@@ -24,6 +24,7 @@ import org.elasticsearch.action.admin.cluster.node.info.PluginsAndModules;
 import org.elasticsearch.bootstrap.JarHell;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.collect.Tuple;
+import org.elasticsearch.common.geo.GeometryParser;
 import org.elasticsearch.common.io.FileSystemUtils;
 import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Setting.Property;
@@ -594,6 +595,7 @@ public class PluginsService implements ReportingService<PluginsAndModules> {
 
         // reload SPI with any new services from the plugin
         reloadLuceneSPI(loader);
+        GeometryParser.reloadFactories(loader);
 
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
         try {
